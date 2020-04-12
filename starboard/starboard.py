@@ -16,7 +16,7 @@ class StarboardPlugin(commands.Cog):
     def __init__(self, bot):
         self.bot: discord.Client = bot
         self.db = bot.plugin_db.get_partition(self)
-        self.channel = 581223459896426496
+        self.channel = 639414739151355914
         self.stars = 1
         self.user_blacklist = list()
         self.channel_blacklist = list()
