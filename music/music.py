@@ -339,7 +339,7 @@ class Music(commands.Cog):
         ctx.voice_state.volume = volume / 100
         await ctx.send('Volume of the player set to {}%'.format(volume))
 
-    @commands.command(name='now', aliases=['current', 'playing'])
+    @commands.command(name='now', aliases=['current', 'playing','np'])
     async def _now(self, ctx: commands.Context):
         """Displays the currently playing song."""
 
