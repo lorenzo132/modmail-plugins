@@ -278,12 +278,12 @@ class Music(commands.Cog):
                           'region': region}}
 
         for n in nodes.values():
-            node = await self.bot.wavelink.initiate_node(host=n['host'],
-                                                         port=n['port'],
-                                                         rest_uri=n['rest_url'],
-                                                         password=n['password'],
-                                                         identifier=n['identifier'],
-                                                         region=n['region'],
+            node = await self.bot.wavelink.initiate_node(host=n['54.37.67.251'],
+                                                         port=n['2333'],
+                                                         rest_uri=n['http://54.37.67.251:2333'],
+                                                         password=n['youshallnotpass'],
+                                                         identifier=n['TEST'],
+                                                         region=n['us_central'],
                                                          secure=False)
 
             node.set_hook(self.event_hook)
