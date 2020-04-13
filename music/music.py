@@ -283,7 +283,7 @@ class Music(commands.Cog):
                                                          rest_uri=n['http://54.37.67.251:2333'],
                                                          password=n['youshallnotpass'],
                                                          identifier=n['TEST'],
-                                                         region=n['us_central'],
+                                                         region=n['sydney'],
                                                          secure=False)
 
             node.set_hook(self.event_hook)
