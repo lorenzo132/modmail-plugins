@@ -50,7 +50,7 @@ class Stats(commands.Cog):
     # Avatar
 
     @commands.command(aliases=["avatarinfo"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def avatar(self, ctx, *, member: typing.Union[discord.Member, str] = None):
         """Get the avatar of a member."""
 
@@ -58,7 +58,7 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @stats.command(name="avatar")
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats_avatar(
         self, ctx, *, member: typing.Union[discord.Member, str] = None
     ):
@@ -69,7 +69,7 @@ class Stats(commands.Cog):
     # Bot
 
     @commands.command()
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def botinfo(self, ctx):
         """Get the stats of your Modmail bot."""
 
@@ -77,7 +77,7 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @stats.command(name="bot")
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats_bot(self, ctx):
         """Get the stats of your Modmail bot."""
 
@@ -86,7 +86,7 @@ class Stats(commands.Cog):
     # Emoji
 
     @commands.command()
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def emoji(self, ctx, *, emoji: discord.Emoji):
         """Get the stats of an emoji."""
 
@@ -94,7 +94,7 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @stats.command(name="emoji")
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats_emoji(self, ctx, *, emoji: discord.Emoji):
         """Get the stats of an emoji."""
 
@@ -103,7 +103,7 @@ class Stats(commands.Cog):
     # Member
 
     @commands.command(aliases=["memberinfo", "user", "userinfo"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def member(self, ctx, *, member: typing.Union[discord.Member, str] = None):
         """Get the stats of a member."""
 
@@ -111,7 +111,7 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @stats.command(name="member", aliases=["user"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats_member(
         self, ctx, *, member: typing.Union[discord.Member, str] = None
     ):
@@ -122,7 +122,7 @@ class Stats(commands.Cog):
     # Role Members
 
     @commands.command(aliases=["rolemembers"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def members(self, ctx, *, role: typing.Union[discord.Role, str] = None):
         """Get info about a role"""
 
@@ -134,7 +134,7 @@ class Stats(commands.Cog):
     # Role
 
     @commands.command()
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def roleinfo(self, ctx, *, role: typing.Union[discord.Role, str] = None):
         """Get the stats of a role."""
 
@@ -142,7 +142,7 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @stats.command(name="role")
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats_role(self, ctx, *, role: typing.Union[discord.Role, str] = None):
         """Get the stats of a role."""
 
@@ -151,7 +151,7 @@ class Stats(commands.Cog):
     # Server
 
     @commands.command(aliases=["guild", "guildinfo", "serverinfo"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def server(self, ctx):
         """Get the stats of your server"""
 
@@ -159,7 +159,7 @@ class Stats(commands.Cog):
         await ctx.send(embed=embed)
 
     @stats.command(name="server", aliases=["guild"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats_server(self, ctx):
         """Get the stats of your server"""
 
@@ -168,7 +168,7 @@ class Stats(commands.Cog):
     # Status
 
     @commands.command(aliases=["us"])
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def userstatus(self, ctx, *, member: typing.Union[discord.Member, str] = None):
         """Get the status of a member."""
 
