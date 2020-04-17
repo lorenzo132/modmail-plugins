@@ -23,7 +23,7 @@ class Stats(commands.Cog):
 
     # Stats Group
     @commands.group(name="stats", aliases=["stat"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def stats(self, ctx):
         """Stats"""
 
@@ -32,7 +32,7 @@ class Stats(commands.Cog):
     # All Stats
 
     @stats.command()
-    @checks.has_permissions(PermissionLevel.REGULAR)
+    @checks.has_permissions()
     async def all(self, ctx):
         """Sends all stats embeds at once."""
 
