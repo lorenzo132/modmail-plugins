@@ -3,4 +3,3 @@ Install the required packages by doing the following:
 
 
 Note, this only works if you host using a linux vps! Heroku will not work.
-Plugin creator: https://github.com/Ergastolator1
