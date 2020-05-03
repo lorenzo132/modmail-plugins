@@ -71,7 +71,7 @@ class ServerStats(commands.Cog):
     async def totalhuman(self, ctx, *, name: str=None):
         """Sets up the Total Humans Voice Channel"""
 
-        name = name or "Total Humans"
+        name = name or "Discord.gg/emote :"
         humans = self.get_humans(ctx)
         await self.create_channel(ctx, name, int(humans))
 
