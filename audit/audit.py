@@ -535,7 +535,7 @@ class Audit(commands.Cog):
         embed.colour = discord.Colour.green()
         embed.description = f"**:inbox_tray: {member.mention} joined the server**"
         embed.add_field(name="Account creation", value=human_timedelta(member.created_at))
-        embed.add_field(name="Account creation", value=human_timedelta(member.created_at))
+        embed.add_field(name="Account creation", value=human_timedelta(member.joined_at))
         await webhook.send(embed=embed)
 
     @commands.Cog.listener()
