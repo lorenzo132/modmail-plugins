@@ -444,41 +444,5 @@ class moderation(commands.Cog):
             )
             await ctx.send(embed = embed)
 
-    #Nuke command
-    @commands.command()
-    @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def nuke(self, ctx):
-        channel_position = ctx.channel.position
-        new_channel = await ctx.channel.clone()
-        await new_channel.edit(reason = f"Nuke by {ctx.message.author.name}#{ctx.message.author.discriminator}", position = channel_position)
-        await ctx.channel.delete()
-        embed = discord.Embed(
-            title = "Nuke",
-            description  = "This channel has been nuked!",
-            color = self.blurple
-        )
-        embed.set_image(url = "https://cdn.discordapp.com/attachments/600843048724987925/600843407228928011/tenor.gif")
-        await new_channel.send(embed = embed, delete_after = 30.0)
-        modlog = discord.utils.get(ctx.guild.text_channels, name = "modlog")
-        if modlog == None:
-            pass
-        if modlog != None:
-            embed = discord.Embed(
-                title = "Nuke",
-                description = f"{ctx.message.author.mention} has nuked {new_channel.mention}.",
-                color = self.blurple
-            )
-            await modlog.send(embed = embed)
-
-    @nuke.error
-    async def nuke_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            embed = discord.Embed(
-                title = "Missing Permissions!",
-                description = "You are missing the **Moderator** permission level!",
-                color = self.errorcolor
-            )
-            await ctx.send(embed = embed)
-
 def setup(bot):
     bot.add_cog(moderation(bot))
