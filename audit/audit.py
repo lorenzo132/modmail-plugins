@@ -626,13 +626,6 @@ class Audit(commands.Cog):
         embed.colour = discord.Colour.gold()
         embed.description = f"**:crossed_swords: {after.mention} updated their profile**"
 
-        if before.avatar != after.avatar:
-            before_url = await self.upload_img(after.id, 'avatar', before.avatar_url)
-            if not before_url:
-                before_url = str(before.avatar_url)
-            embed._author['icon_url'] = before_url
-            embed.add_field(name="Avatar", value=f"[[before]]({before_url}) -> [[after]]({after.avatar_url})")
-
         if before.discriminator != after.discriminator:
             embed.add_field(name="Discriminator", value=f"`#{before.discriminator}` -> `#{after.discriminator}`")
 
