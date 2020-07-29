@@ -206,7 +206,6 @@ class Audit(commands.Cog):
         self._save_pickle()
 
     @commands.group()
-    @commands.has_permissions(administrator=True)
     async def audit(self, ctx):
         """Audit logs, copied from mee6."""
 
@@ -258,7 +257,6 @@ class Audit(commands.Cog):
         await ctx.send(embed=embed)
 
     @audit.command()
-    @commands.has_permissions(administrator=True)
     async def disable(self, ctx, *, audit_type: str.lower):
         """Disable a specific audit type, use "all" to disable all."""
         audit_type = audit_type.replace('_', ' ')
