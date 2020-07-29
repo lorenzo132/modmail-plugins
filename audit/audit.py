@@ -211,7 +211,6 @@ class Audit(commands.Cog):
         """Audit logs, copied from mee6."""
 
     @audit.command()
-    @commands.has_permissions(administrator=True)
     async def ignore(self, ctx, *, channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
         """Ignore a channel or category from audit logs."""
         if isinstance(channel, discord.CategoryChannel):
