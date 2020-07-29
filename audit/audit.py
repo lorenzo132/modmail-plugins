@@ -221,7 +221,6 @@ class Audit(commands.Cog):
         await ctx.send(embed=embed)
 
     @audit.command()
-    @commands.has_permissions(administrator=True)
     async def unignore(self, ctx, *,
                        channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
         """Unignore a channel or category from audit logs."""
@@ -237,7 +236,6 @@ class Audit(commands.Cog):
         await ctx.send(embed=embed)
 
     @audit.command()
-    @commands.has_permissions(administrator=True)
     async def enable(self, ctx, *, audit_type: str.lower = None):
         """Enable a specific audit type, use "all" to enable all."""
         if audit_type is None:
