@@ -14,7 +14,7 @@ class TopSupporters(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
     @commands.command()
     async def topsupporters(self, ctx, *, dt: UserFriendlyTime):
         """Retrieves top supporters for the specified time period"""
