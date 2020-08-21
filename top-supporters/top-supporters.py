@@ -16,7 +16,7 @@ class TopSupporters(commands.Cog):
 
     @checks.has_permissions(PermissionLevel.SUPPORTER)
     @commands.command()
-    async def topsupporters(self, ctx, *, dt: UserFriendlyTime):
+    async def top(self, ctx, *, dt: UserFriendlyTime):
         """Retrieves top supporters for the specified time period"""
         async with ctx.typing():
             date = datetime.utcnow() - (dt.dt - datetime.utcnow())
