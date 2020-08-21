@@ -9,7 +9,7 @@ from core.models import PermissionLevel
 from core.time import UserFriendlyTime
 
 
-class TopSupporters(commands.Cog):
+class top(commands.Cog):
     """Sets up top supporters command in Modmail discord"""
     def __init__(self, bot):
         self.bot = bot
