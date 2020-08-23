@@ -97,8 +97,8 @@ class Audit(commands.Cog):
         self.invite_regex = re.compile(
             r"(?:https?://)?(?:www\.)?(?:discord\.(?:gg|io|me|li)|(?:discordapp|discord)\.com/invite)/[\w]+"
         )
-        self.whname = "Modmail Audit Logger"
-        self.acname = "dyno-logs"
+        self.whname = "avatar Logger"
+        self.acname = "avatar-logs"
         self._webhooks = {}
         self._webhook_locks = {}
 
@@ -341,25 +341,6 @@ class Audit(commands.Cog):
             e.colour = discord.Colour.gold()
             e.description = desc
             return e
-
-        if self.c('member nickname', after.guild):
-            if before.nick != after.nick:
-                embed = get_embed(f"**:pencil: {after.mention} nickname edited**")
-                embed.add_field(name='Old nickname', value=f"`{before.nick}`")
-                embed.add_field(name='New nickname', value=f"`{after.nick}`")
-                await self.send_webhook(after.guild, embed=embed)
-
-        if self.c('member roles', after.guild):
-            removed_roles = sorted(set(before.roles) - set(after.roles), key=lambda r: r.position, reverse=True)
-            added_roles = sorted(set(after.roles) - set(before.roles), key=lambda r: r.position, reverse=True)
-
-            if added_roles or removed_roles:
-                embed = get_embed(f"**:crossed_swords: {after.mention} roles have changed**")
-                if added_roles:
-                    embed.add_field(name='Added roles', value=f"{' '.join('``' + r.name + '``' for r in added_roles)}", inline=False)
-                if removed_roles:
-                    embed.add_field(name='Removed roles', value=f"{' '.join('``' + r.name + '``' for r in removed_roles)}", inline=False)
-                await self.send_webhook(after.guild, embed=embed)
 
     async def _user_update(self, guild, before, after):
         if not self.c('user update', guild):
