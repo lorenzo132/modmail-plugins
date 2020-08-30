@@ -9,7 +9,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-class Music(commands.Cog, name='Music'):
+class music(commands.Cog, name='music'):
     YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist':'True'}
     FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
