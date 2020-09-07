@@ -110,3 +110,21 @@ class MemberResource:
         embed.set_footer(text=f"User ID: {m.id}")
 
         return embed
+
+
+    def join_embed(self):
+        """Create an embed containing the member's join position."""
+
+        m: discord.Member = self.member
+        
+        join_position = sorted(m.guild.members, key=lambda m: m.joined_at).index(m) + 1
+
+        embed = discord.Embed(color=m.color)
+
+        embed.set_author(name=f"{str(m)}'s Join Position")
+        embed.add_field(name="Join Position", value=join_position)
+
+        embed.set_thumbnail(url=m.avatar_url)
+        embed.set_footer(text=f"User ID: {m.id}")
+
+        return embed
