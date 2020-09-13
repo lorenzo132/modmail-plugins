@@ -7,7 +7,7 @@ from core import checks
 from core.models import PermissionLevel
 
 
-class Mediaonly(commands.Cog):
+class mediaonly(commands.Cog):
     """Sets up emoji suggestor channel in Modmail discord."""
 
     def __init__(self, bot):
@@ -74,7 +74,7 @@ class Mediaonly(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @emojichannels.command(aliases=['channel'])
     async def channels(self, ctx, *channels_: discord.TextChannel):
-        """Configure Emoji Channel(s)"""
+        """Configure media Channel(s)"""
         self.config = await self.db.find_one_and_update(
             {'_id': 'config'}, {'$set': {'channel_ids': [i.id for i in channels_]}},
             return_document=ReturnDocument.AFTER,
@@ -107,4 +107,4 @@ class Mediaonly(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Mediaonly(bot))
+    bot.add_cog(mediaonly(bot))
