@@ -206,7 +206,7 @@ class moderation(commands.Cog):
     #massban command
     @commands.command()
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def massban(self, ctx, reason: ActionReason, *members: MemberID):
+    async def massban(self, ctx, *members: MemberID):
         """ Mass bans multiple members from the server. """
         try:
             for member_id in members:
