@@ -67,7 +67,7 @@ class mediaonly(commands.Cog):
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @commands.group(invoke_without_command=True)
-    async def emojichannels(self, ctx):
+    async def mediachannels(self, ctx):
         """Configure Emoji Suggestor Channel"""
         await ctx.send_help(ctx.command)
 
