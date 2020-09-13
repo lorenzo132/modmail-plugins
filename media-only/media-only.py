@@ -72,7 +72,7 @@ class Mediaonly(commands.Cog):
         await ctx.send_help(ctx.command)
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    @emojichannels.command(aliases=['channel'])
+    @mediachannels.command(aliases=['channel'])
     async def channels(self, ctx, *channels_: discord.TextChannel):
         """Configure media Channel(s)"""
         self.config = await self.db.find_one_and_update(
@@ -83,7 +83,7 @@ class Mediaonly(commands.Cog):
         await ctx.send('Config set.')
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    @emojichannels.command()
+    @mediachannels.command()
     async def emojis(self, ctx, *emojis: discord.Emoji):
         """Configure Emojis used during voting"""
         self.config = await self.db.find_one_and_update(
@@ -95,7 +95,7 @@ class Mediaonly(commands.Cog):
 
         
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    @emojichannels.command()
+    @mediachannels.command()
     async def toggle(self, ctx):
         """Toggles status of the plugin"""
         self.config = await self.db.find_one_and_update(
