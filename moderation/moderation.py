@@ -202,6 +202,28 @@ class moderation(commands.Cog):
                 color = self.errorcolor
             )
             await ctx.send(embed = embed, delete_after = 5.0)
+    #massban command
+    @commands.command()
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+	async def massban(self, ctx, *, ids:str):
+		"""Mass bans users by ids (separate ids with spaces)"""
+		await ctx.channel.trigger_typing()
+		ids = ids.split(" ")
+		guild = ctx.guild
+		failed_ids = []
+		success = 0
+		for id in ids:
+			try:
+				await self.bot.http.ban(int(id), ctx.guild.id, delete_message_days=0)
+				success += 1
+			except:
+				failed_ids.append("`{}`".format(id))
+		if len(failed_ids) != 0:
+			await ctx.send(Language.get("moderation.massban_failed_ids", ctx).format(", ".join(ids)))
+		await ctx.send(Language.get("moderation.massban_success", ctx).format(success, len(ids)))
+		for channel in guild.channels:
+			if channel.name == "logs":
+				await channel.send(Language.get("moderation.massban_success", ctx).format(success, len(ids)))
 
     #Unban command
     @commands.command()
