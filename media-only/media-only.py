@@ -74,7 +74,7 @@ class Mediaonly(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @mediachannels.command(aliases=['channel'])
     async def channels(self, ctx, *channels_: discord.TextChannel):
-        """Configure Emoji Channel(s)"""
+        """Configure media Channel(s)"""
         self.config = await self.db.find_one_and_update(
             {'_id': 'config'}, {'$set': {'channel_ids': [i.id for i in channels_]}},
             return_document=ReturnDocument.AFTER,
@@ -85,7 +85,7 @@ class Mediaonly(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @mediachannels.command()
     async def emojis(self, ctx, *emojis: discord.Emoji):
-        """Configure Emojis used during voting"""
+        """Configure Emojis used to react to all media"""
         self.config = await self.db.find_one_and_update(
             {'_id': 'config'}, {'$set': {'emojis': [i.id for i in emojis]}},
             return_document=ReturnDocument.AFTER,
