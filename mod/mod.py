@@ -9,7 +9,6 @@ from random import choice
 from discord.ext import commands
 from discord.ext.commands import has_permissions, CheckFailure, Bot
 from datetime import timedelta
-from utils import permissions, default
 
 footer = "『 TacoBot ✦ Tacoz 』"
 start_time = time.monotonic()
