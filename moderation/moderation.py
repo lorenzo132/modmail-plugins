@@ -205,7 +205,7 @@ class moderation(commands.Cog):
     #massban command
     @commands.command()
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-	async def massban(self, ctx, *, ids:str):
+    async def massban(self, ctx, *, ids:str):
 		"""Mass bans users by ids (separate ids with spaces)"""
 		await ctx.channel.trigger_typing()
 		ids = ids.split(" ")
