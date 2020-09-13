@@ -7,8 +7,8 @@ from core import checks
 from core.models import PermissionLevel
 
 
-class Mediaonly(commands.Cog):
-    """Sets up emoji suggestor channel in Modmail discord."""
+class mediaonly(commands.Cog):
+    """Sets up media channel in discord."""
 
     def __init__(self, bot):
         self.bot = bot
