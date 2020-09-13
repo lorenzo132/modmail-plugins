@@ -7,7 +7,7 @@ from core import checks
 from core.models import PermissionLevel
 
 
-class mediaonly(commands.Cog):
+class EmojiSuggestor(commands.Cog):
     """Sets up a media only channel in discord."""
 
     def __init__(self, bot):
@@ -107,4 +107,4 @@ class mediaonly(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(mediaonly(bot))
+    bot.add_cog(EmojiSuggestor(bot))
