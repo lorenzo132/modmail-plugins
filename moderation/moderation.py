@@ -205,9 +205,7 @@ class moderation(commands.Cog):
 
     #massban command
     @commands.command()
-    @commands.guild_only()
-    @commands.max_concurrency(1, per=commands.BucketType.user)
-    @permissions.has_permissions(ban_members=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def massban(self, ctx, reason: ActionReason, *members: MemberID):
         """ Mass bans multiple members from the server. """
         try:
