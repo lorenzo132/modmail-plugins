@@ -1,17 +1,9 @@
-import asyncio
-import logging
-import os
-import random
-import dateutil
-import discord
+import asyncio, dateutil, discord, logging, os, random, typing
 
-from datetime import datetime
-
-import typing
 from discord.ext import commands
-
 from core import checks
 from core.models import PermissionLevel
+from datetime import datetime
 
 logger = logging.getLogger("Modmail")
 
@@ -53,7 +45,7 @@ class YoutubeNotifier(commands.Cog):
         self.yt_playlist = config.get("playlist", "")
         self.icon = config.get("icon", "")
         self.last_video = config.get("lastvideo", "")
-        self.discord_channel = config.gey("channel", "")
+        self.discord_channel = config.get("channel", "")
         self.msg = config.get("message", "")
         self.enabled = config.get("enabled", True)
 
