@@ -54,7 +54,7 @@ class YoutubeNotifier(commands.Cog):
             logger.error("No API key found.")
             self.enabled = False
             return
-        self.bot.loop.create_task(self._handle_notify())
+        self.bot.loop.create_task(self._handle_notify(ch))
 
     async def _handle_notify(self, ch: typing.Optional[str]):
         while True:
