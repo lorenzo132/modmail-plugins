@@ -37,38 +37,14 @@ class Mediaonly(commands.Cog):
                     await self.delete(message, warning=f'{message.author.mention}, send 1 emoji at a time.')
                 elif not (message.attachments[0].filename.endswith('.png') or message.attachments[0].filename.endswith('.gif') or message.attachments[0].filename.endswith('.jpg') or message.attachments[0].filename.endswith('.mp4')):
                     await self.delete(message, warning=f'{message.author.mention}, only png, gif, jpg and mp4 files are allowed here 📷')
-                else:
-                    for r in self.config['emojis']:
-                        await message.add_reaction(discord.utils.get(message.guild.emojis, id=r))
-                        await asyncio.sleep(0.1)
             else:
                 await self.delete(message, warning=f'{message.author.mention}, only images + captions are allowed. If you wish to add a caption, edit your original message.')
 
-    @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload):
-        if self.config.get('status', True) and payload.channel_id in self.config.get('channel_ids', []):
-            message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
-            for r in message.reactions:
-                if r.count > 1:
-                    try:
-                        await r.remove(self.bot.user)
-                    except discord.NotFound:
-                        pass
-
-    @commands.Cog.listener()
-    async def on_raw_reaction_remove(self, payload):
-        if self.config.get('status', True) and payload.channel_id in self.config.get('channel_ids', []):
-            message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
-            r_emojis = [r.emoji.id for r in message.reactions]
-
-            for r in self.config['emojis']:
-                if r not in r_emojis:
-                    await message.add_reaction(discord.utils.get(message.guild.emojis, id=r))
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @commands.group(invoke_without_command=True)
     async def mediachannels(self, ctx):
-        """Configure media only Channels"""
+        """Configure media only Channels only png, gif, jpg and mp4 files are supported"""
         await ctx.send_help(ctx.command)
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
