@@ -44,7 +44,7 @@ class Mediaonly(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @commands.group(invoke_without_command=True)
     async def mediachannels(self, ctx):
-        """Configure media only Channels only png, gif, jpg and mp4 files are supported"""
+        """Configure media only Channels only png, gif, jpg and mp4 files are supported!"""
         await ctx.send_help(ctx.command)
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
