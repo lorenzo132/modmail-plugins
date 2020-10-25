@@ -36,7 +36,7 @@ class Mediaonly(commands.Cog):
                 if len(message.attachments) > 1:
                     await self.delete(message, warning=f'{message.author.mention}, send 1 emoji at a time.')
                 elif not (message.attachments[0].filename.endswith('.png') or message.attachments[0].filename.endswith('.gif') or message.attachments[0].filename.endswith('.jpg') or message.attachments[0].filename.endswith('.mp4')):
-                    await self.delete(message, warning=f'{message.author.mention}, only png, gif, jpg and mp4 files are allowed here <a:dancedoggo:754440275262177391>')
+                    await self.delete(message, warning=f'{message.author.mention}, only png, gif, jpg and mp4 files are allowed here 📷')
                 else:
                     for r in self.config['emojis']:
                         await message.add_reaction(discord.utils.get(message.guild.emojis, id=r))
