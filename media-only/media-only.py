@@ -81,18 +81,6 @@ class Mediaonly(commands.Cog):
             upsert=True
         )
         await ctx.send('Config set.')
-
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    @mediachannels.command()
-    async def emojis(self, ctx, *emojis: discord.Emoji):
-        """Configure Emojis used to react to all media"""
-        self.config = await self.db.find_one_and_update(
-            {'_id': 'config'}, {'$set': {'emojis': [i.id for i in emojis]}},
-            return_document=ReturnDocument.AFTER,
-            upsert=True
-        )
-        await ctx.send('Config set.')
-
         
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @mediachannels.command()
