@@ -12,7 +12,7 @@ class Status(commands.Cog):
         await self.bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{server.member_count} Members!"))
         await asyncio.sleep(10)
 
-    @commands.command(name="status start")
+    @commands.command(name="status_start")
     async def start_start_cmd(self, ctx):
         self.start_status.start()
         await ctx.send("Done! Re-run this command if it stops working")
