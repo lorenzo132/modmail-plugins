@@ -583,9 +583,9 @@ class Audit(commands.Cog):
         embed.timestamp = datetime.datetime.utcnow()
 
         try:
-            async with self.session.post('https://hasteb.in/documents', data=upload_text) as resp:
+            async with self.session.post('https://hastebin.cc/documents', data=upload_text) as resp:
                 key = (await resp.json())["key"]
-                embed.add_field(name="Recovered URL", value=f"https://hasteb.in/{key}.txt")
+                embed.add_field(name="Recovered URL", value=f"https://hastebin.cc/{key}.txt")
         except (JSONDecodeError, ClientResponseError, IndexError):
             pass
 
