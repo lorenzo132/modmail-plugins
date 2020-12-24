@@ -498,7 +498,7 @@ class Logger(commands.Cog):
                 key = (await resp.json())["key"]
                 return await channel.send(embed=self.make_embed(
                     f'{len(message_ids)} message{pl} deleted from #{channel_text}.',
-                    f'Deleted message{pl}: https://hasteb.in/{key}.',
+                    f'Deleted message{pl}: https://hastebin.cc/{key}.',
                     fields=[('Channel ID:', payload.channel_id, True)]
                 ))
         except (JSONDecodeError, ClientResponseError, IndexError):
