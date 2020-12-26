@@ -8,7 +8,7 @@ class Status(commands.Cog):
 
     @tasks.loop(seconds=10)
     async def start_status(self):
-        await self.bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{server.member_count} Members!"))
+        await self.bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{guild.member_count} Members!"))
         await asyncio.sleep(10)
 
     @commands.command(name="status_start")
