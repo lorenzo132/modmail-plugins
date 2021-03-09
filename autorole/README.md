@@ -5,7 +5,7 @@
 
 ## Installation
 
-To install this plugin, use this command in your Modmail server: `plugin add autorole`.
+To install this plugin, use this command in your Modmail server: `plugin add lorenzo132/modmail-plugins/autorole`.
 
 ## Commands
 
