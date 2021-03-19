@@ -61,13 +61,13 @@ class GithubPlugin(commands.Cog):
         embed.add_field(name="Additions", value=data["additions"])
         embed.add_field(name="Deletions", value=data["deletions"])
         embed.add_field(name="Commits", value=data["commits"])
-        # embed.set_footer(text=f"Pull Request #{data['number']}")
+        embed.set_footer(text=f"Pull Request #{data['number']}")
         return embed
 
     async def handleIssue(self, data, repo):
         embed = self._base(data, repo)
         embed.colour = self.colors["issues"][data["state"]]
-        # embed.set_footer(text=f"Issue #{data['number']}")
+        embed.set_footer(text=f"Issue #{data['number']}")
         return embed
 
     def _base(self, data, repo, issue=True):
@@ -82,7 +82,7 @@ class GithubPlugin(commands.Cog):
         rtitle = f"[{repo}] {_type}: #{data['number']} {data['title']}"
         title = f"{rtitle.slice(0, 253)}..." if len(rtitle) > 256 else rtitle
         embed = discord.Embed()
-        # embed.set_thumbnail(url="https://i.imgur.com/J2uqqol.gif")
+        embed.set_thumbnail(url="https://i.imgur.com/J2uqqol.gif")
         embed.set_author(
             name=data["user"]["login"],
             icon_url=data["user"]["avatar_url"],
