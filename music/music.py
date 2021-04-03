@@ -1363,7 +1363,6 @@ class music(commands.Cog):
             colour=0x8cffdb,
         )
         embed.add_field(name="Usage", value=f"To get started, request a free API URI with `{self.bot.prefix}requestapi` and once you have receive your API URI run `{self.bot.prefix}musicconfig api <APIURI>`.")
-        embed.add_field(name="Donate ❤️", value="If you're feeling generous, you can donate to my Patreon at https://www.patreon.com/takubot to support this free Groovy-alternative music bot!")
         await ctx.send(embed=embed)
 
 
