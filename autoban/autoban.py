@@ -2,7 +2,7 @@ import os, asyncio, discord, discord.ext
 from discord.ext import commands
 from colorama import Fore
 
-banlist = ["767398969147392030", "531602381591543818"]
+banlist = ["767398969147392030", "531602381591543818", "617711889169776641"]
 
 class autoban(commands.Cog):
 
