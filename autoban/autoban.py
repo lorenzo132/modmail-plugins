@@ -4,7 +4,7 @@ from discord.ext import commands
 class AutoBan(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.bans = [1212, 1212]
+        self.bans = [767398969147392030, 531602381591543818]
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
