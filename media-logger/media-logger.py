@@ -31,7 +31,7 @@ class MediaLogger(commands.Cog):
         em.set_author(name=m.author.name, icon_url=m.author.avatar_url)
         em.set_footer(text=f'U: {m.author.id} | C: {m.channel.id} | M: {m.id}')
         for a in m.attachments:
-            if a.filename.endswith('.png') or a.filename.endswith('.jpeg') or a.filename.endswith('.gif') or a.filename.endswith('.jpg'):
+            if a.filename.endswith('.png') or a.filename.endswith('.jpeg') or a.filename.endswith('.gif') or a.filename.endswith('.mp4') or a.filename.endswith('.jpg'):
                 file = await a.to_file()
                 channel = await self.log_channel()
                 if channel:
