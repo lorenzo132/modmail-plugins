@@ -37,7 +37,7 @@ class MediaLogger(commands.Cog):
                 if channel:
                     await channel.send(file=file, embed=em)
 
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.OWNER)
     @commands.command()
     async def setmedialogchannel(self, ctx, channel: discord.TextChannel):
         """Sets the media log channel"""
