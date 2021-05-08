@@ -23,7 +23,7 @@ logger = logging.getLogger("Modmail")
 class Autorole(Cog):
     """
     Auto-assign a role to a user when they join your server.
-    More info: [click here](https://github.com/papiersnipper/modmail-plugins/tree/master/autorole)
+    More info: [click here](https://github.com/lorenzo132/modmail-plugins/tree/master/autorole)
     """
 
     def __init__(self, bot: Bot) -> None:
@@ -108,7 +108,7 @@ class Autorole(Cog):
 
         embed = Embed(
             title="Autorole",
-            url="https://github.com/papiersnipper/modmail-plugins/blob/master/autorole",
+            url="https://github.com/lorenzo132/modmail-plugins/blob/master/autorole",
             description=f"{', '.join(role_mentions)} will now be given to all new members.",
             color=self.bot.main_color,
         )
@@ -129,7 +129,7 @@ class Autorole(Cog):
 
         embed = Embed(
             title="Autorole",
-            url="https://github.com/papiersnipper/modmail-plugins/blob/master/autorole",
+            url="https://github.com/lorenzo132/modmail-plugins/blob/master/autorole",
             description=f"Added {role.mention} for {users} members.",
             colour=self.bot.main_color,
         )
@@ -142,7 +142,7 @@ class Autorole(Cog):
         """Clear the default role(s)."""
         embed = Embed(
             title="Autorole",
-            url="https://github.com/papiersnipper/modmail-plugins/blob/master/autorole",
+            url="https://github.com/lorenzo132/modmail-plugins/blob/master/autorole",
             description=f"Cleared role(s).",
             color=self.bot.main_color,
         )
