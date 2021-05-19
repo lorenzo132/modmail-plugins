@@ -6,10 +6,6 @@ import discord
 import psutil
 from discord.ext import commands
 
-process = psutil.Process()
-init_cpu_time = process.cpu_percent()
-
-
 class Status(commands.Cog, name="Stats"):
     def __init__(self, client):
         self.client = client
