@@ -10,15 +10,8 @@ from discord.ext import commands
 
 log = getLogger(__name__)
 
-PHISH_API = "https://anti-fish.bitflow.dev/check"
-
 # https://github.com/Cog-Creators/Red-DiscordBot/blob/7abc9bdcf16c9d844978f7743aa86d664deeabef/redbot/core/utils/common_filters.py#L17
 URL_RE = re.compile(r"(https?|s?ftp)://(\S+)", re.I)
-
-HEADERS = {
-    "User-Agent": "Modmail (https://github.com/kyb3r/modmail)",
-    "Content-Type": "application/json",
-}
 
 # https://github.com/Cog-Creators/Red-DiscordBot/blob/7abc9bdcf16c9d844978f7743aa86d664deeabef/redbot/core/utils/chat_formatting.py#L106
 def box(text: str, lang: str = "") -> str:
@@ -28,8 +21,9 @@ def box(text: str, lang: str = "") -> str:
 
 
 class PhishingDeleter(commands.Cog):
-    """A cog which checks for scam links in messages and deletes them if its one.\n**Author:** kato#0666"""
+    """A cog which checks for scam links in messages and deletes them if its one.\n**Author:** kato#0666 & sora#0666"""
 
+    __version__ = "1.2.0"
     # https://github.com/Jerrie-Aries/modmail-plugins/blob/d61e8918f293c83f32e6e3f4c2fa4e079a14d452/invites/invites.py#L29
     _id = "config"
     default_config = {
@@ -53,14 +47,12 @@ class PhishingDeleter(commands.Cog):
     ):
         """Format an embed to be sent into log channels."""
         embed = discord.Embed(color=discord.Color.red())
+        embed.set_author(name=str(user), icon_url=user.avatar_url)
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-        embed.title = "Scam Link Detected"
-        embed.description = f"Message sent by `{user} - {user.id}` contained scam link(s) so it has been deleted."
-        embed.add_field(name="Content:", value=message.content, inline=False)
-        embed.add_field(
-            name="Scam Link(s)", value=box(response[:1024], "json"), inline=False
-        )
-        embed.set_footer(text=f"Sent by {user.id} in {message.channel.name}")
+        embed.description = f"Message from {user.mention} deleted in {message.channel.mention}.\nIt was sent on <t:{int(message.created_at.replace(tzinfo=datetime.timezone.utc).timestamp())}:F>."
+        embed.add_field(name="Message Content", value=message.content, inline=False)
+        embed.add_field(name="Suspicious Links", value=box(response[:1024], "json"), inline=False)
+        embed.set_footer(text=f"User ID: {user.id}\nScamChecker: v{self.__version__}")
         return embed
 
     # https://github.com/Jerrie-Aries/modmail-plugins/blob/d61e8918f293c83f32e6e3f4c2fa4e079a14d452/invites/invites.py#L76https://github.com/Jerrie-Aries/modmail-plugins/blob/d61e8918f293c83f32e6e3f4c2fa4e079a14d452/invites/invites.py#L76
@@ -100,21 +92,22 @@ class PhishingDeleter(commands.Cog):
         if to_update:
             await self.config_update()
 
-    async def _scam_link_check(self, content: str):
+    async def _scam_link_check(self, content: str) -> bool:
         """
         Checks if a message contains a scam link.
         """
-        payload = json.dumps({"message": content})
-        async with self.session.post(PHISH_API, data=payload, headers=HEADERS) as resp:
+        async with self.session.get(
+            f"https://anti-fish.harmony.rocks/?url={content}"
+        ) as resp:
             if resp.status != 200:
-                return False, None
+                return False, []
             try:
                 data = await resp.json()
                 if data["match"]:
-                    return data["match"], json.dumps(data["matches"], indent=4)
-                return False, None
+                    return data["match"], data["matches"]
+                return False, []
             except Exception:
-                return False, None  # it returned an unkown response so idk man
+                return False, []  # it returned an unkown response so idk man
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -128,75 +121,82 @@ class PhishingDeleter(commands.Cog):
         guild_config = self.guild_config(str(message.guild.id))
 
         if not guild_config["enabled"]:
-            return  # not enabled ignore the fuck
-
-        if not URL_RE.search(message.content):
             return
 
-        match, matches = await self._scam_link_check(message.content)
+        _check = URL_RE.search(message.content)
+        
+        if not _check:
+            return  # doesn't contain a link
+        scam = _check.group(0)
+        match, matches = await self._scam_link_check(scam)
         if not match:
             return
-        if guild_config["channel"] != None:
-            channel = message.guild.get_channel(int(guild_config["channel"]))
-            if channel:
-                await channel.send(
-                    embed=self._format_log_embed(message.author, message, matches)
-                )
         try:
             await message.delete()
-        except (discord.HTTPException, discord.Forbidden, discord.NotFound) as e:
+        except Exception as e:
             log.error(f"Failed to delete message: {e}")
             return
+        log_chan = (
+            None
+            if not guild_config["channel"]
+            else message.guild.get_channel(int(guild_config["channel"]))
+        )
+        if log_chan:
+            await log_chan.send(
+                embed=self._format_log_embed(message.author, message, json.dumps(matches, indent=4))
+            )
+        action = guild_config["action"]
+        if not action:
+            return
+        if action == "kick":
+            try:
+                await message.author.kick(
+                    reason=f"ScamChecker: sent a suspicious link in #{message.channel.name} | {message.channel.id}"
+                )
+            except Exception as e:
+                if log_chan:
+                    await log_chan.send(
+                        embed=discord.Embed(
+                            title="Kick - Error",
+                            description=f"Couldn't kick {message.author.mention} - {message.author.id}\nError: {e}",
+                            color=discord.Color.red(),
+                        )
+                    )
+                log.error(f"Failed to kick user: {e}")
+                return
+            if log_chan:
+                await log_chan.send(
+                    embed=discord.Embed(
+                        title="Kick",
+                        description=f"{message.author.mention} - `{message.author.id}` has been kicked for sending suspicious links.",
+                        color=discord.Color.red(),
+                    )
+                )
+        else:
+            try:
+                await message.author.ban(
+                    reason=f"ScamChecker: sent a suspicious link in #{message.channel.name} | {message.channel.id}"
+                )
+            except Exception as e:
+                if log_chan:
+                    await log_chan.send(
+                        embed=discord.Embed(
+                            title="Ban - Error",
+                            description=f"Couldn't ban {message.author.mention} - {message.author.id}\nError: {e}",
+                            color=discord.Color.red(),
+                        )
+                    )
+                log.error(f"Failed to ban user: {e}")
+                return
 
-        if guild_config["action"] != None:
-            action = guild_config["action"]
-            log_chan = message.guild.get_channel(int(guild_config["channel"]))
-            if action == "kick":
-                try:
-                    await message.author.kick(
-                        reason=f"ScamChecker: sent a scam link in #{message.channel.name} | {message.channel.id}"
+            if log_chan:
+                await log_chan.send(
+                    embed=discord.Embed(
+                        title="Ban",
+                        description=f"{message.author.mention} - `{message.author.id}` has been banned for sending suspicious links.",
+                        color=discord.Color.red(),
                     )
-                    if log_chan:
-                        await log_chan.send(
-                            embed=discord.Embed(
-                                title="Kick", 
-                                description=f"{message.author.mention} - `{message.author.id}` has been kicked for sending scam/phishing links.",
-                                color=discord.Color.red()
-                            )
-                        )
-                except (discord.HTTPException, discord.Forbidden) as e:
-                    if log_chan:
-                        await log_chan.send(
-                            embed=discord.Embed(
-                                title="Kick - Error", 
-                                description=f"Couldn't kick {message.author.mention} - {message.author.id}\nError: {e}",
-                                color=discord.Color.red()
-                            )
-                        )
-                    log.error(f"Couldn't kick user due to: {e}")
-            else:
-                try:
-                    await message.author.ban(
-                        reason=f"ScamChecker: sent a scam link in #{message.channel.name} | {message.channel.id}"
-                    )
-                    if log_chan:
-                        await log_chan.send(
-                            embed=discord.Embed(
-                                title="Ban", 
-                                description=f"{message.author.mention} - `{message.author.id}` has been banned for sending scam/phishing links.",
-                                color=discord.Color.red()
-                            )
-                        )
-                except (discord.HTTPException, discord.Forbidden) as e:
-                    if log_chan:
-                        await log_chan.send(
-                            embed=discord.Embed(
-                                title="Kick - Ban", 
-                                description=f"Couldn't ban {message.author.mention} - {message.author.id}\nError: {e}",
-                                color=discord.Color.red()
-                            )
-                        )
-                    log.error(f"Couldn't ban user due to: {e}")
+                )
 
     @commands.group()
     @commands.guild_only()
@@ -239,13 +239,19 @@ class PhishingDeleter(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(manage_messages=True)
-    async def scamcheck(self, ctx: commands.Context, *, message: str):
-        """Check if a message contains a scam link."""
-        match, matches = await self._scam_link_check(message)
+    async def scamcheck(
+        self, ctx: commands.Context, *, link: str
+    ):
+        """Check if a link is phishy!"""
+        links = URL_RE.search(link)
+        if not links:
+            return await ctx.send("Message doesn't contain any links.")
+        match, matches = await self._scam_link_check(links.group(0))
         if not match:
-            await ctx.send("It's not a scam link.")
-            return
-        await ctx.send(f"Scam links found in message:\n{box(matches, 'json')}")
+            return await ctx.send("Message doesn't contain any links which maybe be phish or scam.")
+        await ctx.send(
+            f"The message contains a suspicious link.\n**Content:** {box(json.dumps(matches, indent=4), 'json')}"
+        )
 
 
 def setup(bot):
