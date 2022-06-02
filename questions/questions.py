@@ -49,7 +49,7 @@ class Questions(commands.Cog):
         message = await thread.channel.send(embed=em)
         await message.pin()
 
-        q_message.content = 'Your thread is now passed over to the moderators.'
+        q_message.content = 'Your appeal will now be reviewed by our moderation team. If you have new information to share about this case, please reply to this message.'
         await thread.reply(q_message)
 
         move_to = self.bot.get_channel(int(config['move_to']))
