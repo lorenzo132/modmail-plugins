@@ -39,7 +39,13 @@ class Questions(commands.Cog):
                 await thread.close(closer=self.bot.modmail_guild.me, message='Closed due to inactivity and not responding to questions')
                 return
             else:
-                responses[question] = m.content
+                answer = m.content if m.content else "<No Message Content>"
+                answer += "\n"
+                if len(m.attachments) > 0:
+                    for attachment in m.attachments:
+                        answer += f"\n`{attachment.filename}`: {attachment.url}"
+
+                responses[question] = answer
 
         await asyncio.sleep(1)
         em = discord.Embed(color=self.bot.main_color, timestamp=datetime.utcnow())
