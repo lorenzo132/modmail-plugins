@@ -8,7 +8,7 @@ from core.models import PermissionLevel
 
 
 class Mediaonly(commands.Cog):
-    """Sets up media channel in discord. edited from 4jr's emoji plugin"""
+    """Sets up media channel in discord."""
 
     def __init__(self, bot):
         self.bot = bot
