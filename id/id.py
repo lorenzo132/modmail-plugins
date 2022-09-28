@@ -14,5 +14,5 @@ class ThreadID(commands.Cog):
 		await ctx.send(ctx.thread.id)
 		
 
-def setup(bot):
-	bot.add_cog(ThreadID(bot))
+async def setup(bot):
+    await bot.add_cog(ThreadID(bot))
