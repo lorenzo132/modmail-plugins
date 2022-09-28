@@ -24,5 +24,5 @@ class EmbedRaw(commands.Cog):
         await ctx.send(f"```{msgg.description}```")
         
 
-def setup(bot):
-    bot.add_cog(EmbedRaw(bot))
+async def setup(bot):
+    await bot.add_cog(EmbedRaw(bot))
