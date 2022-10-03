@@ -1,3 +1,0 @@
-lavalink==3.1.4
-cachetools==4.2.1
-lyricsgenius>=3.0.0
