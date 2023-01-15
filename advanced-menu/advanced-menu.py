@@ -74,7 +74,7 @@ class DropdownView(discord.ui.View):
     async def on_timeout(self):
         await self.msg.edit(view=None)
         await self.msg.channel.send("Timed out")
-        if self.config["delete_on_timeout"]:
+        if self.config["close_on_timeout"]:
             await self.thread.close(closer=self.bot.guild.me)
 
     async def done(self):
@@ -86,13 +86,23 @@ class AdvancedMenu(commands.Cog):
         self.bot = bot
         self.db = self.bot.plugin_db.get_partition(self)
         self.config = None
-        self.default_config = {"enabled": False, "options": {}, "submenus": {}, "timeout": 20, "delete_on_timeout": False, "embed_text": "Please select an option.", "dropdown_placeholder": "Select an option to contact the staff team."}
+        self.default_config = {"enabled": False, "options": {}, "submenus": {}, "timeout": 20, "close_on_timeout": False, "embed_text": "Please select an option.", "dropdown_placeholder": "Select an option to contact the staff team."}
 
     async def cog_load(self):
         self.config = await self.db.find_one({"_id": "advanced-menu"})
         if self.config is None:
             self.config = self.default_config
             await self.update_config()
+        missing = []
+        for key in self.default_config.keys():
+            if key not in self.config:
+                missing.append(key)
+
+        if missing:
+            for key in missing:
+                self.config[key] = self.default_config[key]
+
+        await self.update_config()
 
     async def update_config(self):
         await self.db.find_one_and_update(
@@ -143,7 +153,7 @@ class AdvancedMenu(commands.Cog):
         embed = discord.Embed(title="Advanced menu config", description="The current config for the advanced menu.", color=discord.Color.blurple())
         embed.add_field(name="Enabled", value=self.config["enabled"])
         embed.add_field(name="Timeout", value=self.config["timeout"])
-        embed.add_field(name="Delete on timeout", value=self.config["delete_on_timeout"])
+        embed.add_field(name="Delete on timeout", value=self.config["close_on_timeout"])
         embed.add_field(name="Embed text", value=self.config["embed_text"])
         embed.add_field(name="Dropdown placeholder", value=self.config["dropdown_placeholder"])
         await ctx.send(embed=embed)
@@ -159,10 +169,10 @@ class AdvancedMenu(commands.Cog):
         await ctx.send("Timeout set.")
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    @advancedmenu_config.command(name="delete_on_timeout")
-    async def advancedmenu_config_delete_on_timeout(self, ctx, delete_on_timeout: bool):
+    @advancedmenu_config.command(name="close_on_timeout")
+    async def advancedmenu_config_close_on_timeout(self, ctx, close_on_timeout: bool):
         """Set whether to delete the menu on timeout."""
-        self.config["delete_on_timeout"] = delete_on_timeout
+        self.config["close_on_timeout"] = close_on_timeout
         await self.update_config()
         await ctx.send("Done.")
 
@@ -625,6 +635,36 @@ class AdvancedMenu(commands.Cog):
             json.dump(self.config, f, indent=4)
 
         await ctx.send(file=discord.File("config.json"))
+
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    @advancedmenu.command(name="load_config")
+    async def advancedmenu_load_config(self, ctx):
+        """Load the config from a file attachment. These should only ever come from the `dump_config` command."""
+
+        # Load attachment
+        if not ctx.message.attachments:
+            return await ctx.send("You must attach a json file to load the config from.")
+        b = await ctx.message.attachments[0].read()
+        json_data = b.decode("utf-8").replace("'", '"')
+
+        # Load json and validate it
+        try:
+            data = json.loads(json_data)
+        except json.decoder.JSONDecodeError:
+            return await ctx.send("Invalid json file.")
+
+        # validate json format against default config
+        for key in self.default_config.keys():
+            missing_keys = []
+            if key not in data:
+                missing_keys.append(key)
+            if len(missing_keys) > 0:
+                return await ctx.send("The following keys are missing from the config: " + ", ".join(missing_keys))
+
+        # push new config to bot
+        self.config = data
+        await self.update_config()
+        await ctx.send("Successfully loaded config")
 
 async def setup(bot):
     await bot.add_cog(AdvancedMenu(bot))
