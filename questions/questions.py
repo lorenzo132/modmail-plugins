@@ -92,5 +92,5 @@ class Questions(commands.Cog):
         await ctx.send('Saved')
 
 
-def setup(bot):
-    bot.add_cog(Questions(bot))
+async def setup(bot):
+    await bot.add_cog(Questions(bot))
