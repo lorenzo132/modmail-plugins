@@ -34,7 +34,7 @@ class Questions(commands.Cog):
             await thread.reply(q_message)
 
             try:
-                m = await self.user_resp(thread.recipient, thread.recipient, timeout=900)
+                m = await self.user_resp(thread.recipient, thread.recipient, timeout=15000)
             except asyncio.TimeoutError:
                 await thread.close(closer=self.bot.modmail_guild.me, message='Closed due to inactivity and not responding to questions')
                 return
