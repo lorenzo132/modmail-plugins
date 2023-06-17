@@ -53,12 +53,12 @@ class Dropdown(discord.ui.Select):
             # await interaction.response.send_message("You selected {}".format(self.values[0]))
             await interaction.response.defer()
             await self.view.done()
-            if  self.values[0] == "Main menu":
+            if self.values[0] == "Main menu":
                 await self.msg.edit(view=DropdownView(self.bot, self.msg, self.thread, self.config, self.config["options"], True))
-            elif self.data[self.values[0]]["type"] == "command":
-                await invoke_commands(self.data[self.values[0]]["callback"], self.bot, self.thread, DummyMessage(copy(self.thread._genesis_message)))
+            elif self.data[self.values[0].lower().replace(" ", "_")]["type"] == "command":
+                await invoke_commands(self.data[self.values[0].lower().replace(" ", "_")]["callback"], self.bot, self.thread, DummyMessage(copy(self.thread._genesis_message)))
             else:
-                await self.msg.edit(view=DropdownView(self.bot, self.msg, self.thread, self.config, self.config["submenus"][self.data[self.values[0]]["callback"]], False))
+                await self.msg.edit(view=DropdownView(self.bot, self.msg, self.thread, self.config, self.config["submenus"][self.data[self.values[0].lower().replace(" ", "_")]["callback"]], False))
         except Exception as e:
                 print(traceback.format_exc())
 
@@ -219,15 +219,16 @@ class AdvancedMenu(commands.Cog):
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @advancedmenu_option.command(name="show")
-    async def advancedmenu_option_show(self, ctx, *, option: str):
+    async def advancedmenu_option_show(self, ctx, *, label: str):
         """Show the details of an option in the main menu"""
-        if option not in self.config["options"]:
-            return await ctx.send("That option does not exist.")
-        embed = discord.Embed(title=self.config["options"][option]["label"], color=discord.Color.blurple())
-        embed.add_field(name="Description", value=self.config["options"][option]["description"], inline=False)
-        embed.add_field(name="Emoji", value=self.config["options"][option]["emoji"], inline=False)
-        embed.add_field(name="Type", value=self.config["options"][option]["type"], inline=False)
-        embed.add_field(name="Command" if self.config["options"][option]["type"] == "command" else "Submenu", value=self.config["options"][option]["callback"], inline=False)
+        label = label.lower().replace(" ", "_")
+        if label not in self.config["options"]:
+            return await ctx.send("That label does not exist.")
+        embed = discord.Embed(title=self.config["options"][label]["label"], color=discord.Color.blurple())
+        embed.add_field(name="Description", value=self.config["options"][label]["description"], inline=False)
+        embed.add_field(name="Emoji", value=self.config["options"][label]["emoji"], inline=False)
+        embed.add_field(name="Type", value=self.config["options"][label]["type"], inline=False)
+        embed.add_field(name="Command" if self.config["options"][label]["type"] == "command" else "Submenu", value=self.config["options"][label]["callback"], inline=False)
         await ctx.send(embed=embed)
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -246,11 +247,12 @@ class AdvancedMenu(commands.Cog):
         await ctx.send("You can type `cancel` at any time to cancel the process.")
         await ctx.send("What is the label of the option?")
         label = (await self.bot.wait_for("message", check=check)).content
+        sanitized_label = label.lower().replace(" ", "_")
 
         if label.lower() == "cancel":
             return await ctx.send("Cancelled.")
 
-        if label in self.config["options"]:
+        if sanitized_label in self.config["options"]:
             await ctx.send("That option already exists. Use `advancedmenu edit` to edit it.")
             return
 
@@ -280,6 +282,8 @@ class AdvancedMenu(commands.Cog):
         else:
             await ctx.send("What is the label of the submenu for the option?")
         callback = (await self.bot.wait_for("message", check=check)).content
+        if type != "command":
+            callback = callback.lower().replace(" ", "_")
 
         if callback.lower() == "cancel":
             return await ctx.send("Cancelled.")
@@ -287,7 +291,7 @@ class AdvancedMenu(commands.Cog):
         if type == "submenu" and callback not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist. Use `advancedmenu submenu create` to add it.")
 
-        self.config["options"][label] = {
+        self.config["options"][sanitized_label] = {
             "label": label,
             "description": description,
             "emoji": emoji,
@@ -301,6 +305,7 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_option.command(name="remove")
     async def advancedmenu_option_remove(self, ctx, *, label):
         """Remove an option from the advanced menu."""
+        label = label.lower().replace(" ", "_")
         if label not in self.config["options"]:
             return await ctx.send("That option does not exist.")
 
@@ -312,6 +317,7 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_option.command(name="edit")
     async def advancedmenu_option_edit(self, ctx, *, label):
         """Edit an option from the advanced menu."""
+        label = label.lower().replace(" ", "_")
         if label not in self.config["options"]:
             return await ctx.send("That option does not exist.")
 
@@ -348,6 +354,8 @@ class AdvancedMenu(commands.Cog):
         else:
             await ctx.send("What is the new label of the new submenu for the option?")
         callback = (await self.bot.wait_for("message", check=check)).content
+        if type != "command":
+            callback = callback.lower().replace(" ", "_")
 
         if callback.lower() == "cancel":
             return await ctx.send("Cancelled.")
@@ -355,8 +363,9 @@ class AdvancedMenu(commands.Cog):
         if type == "submenu" and callback not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist. Use `advancedmenu submenu create` to add it.")
 
+        old_label = self.config["options"][label]["label"]
         self.config["options"][label] = {
-            "label": label,
+            "label": old_label,
             "description": description,
             "emoji": emoji,
             "type": type,
@@ -376,10 +385,11 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_submenu.command(name="create")
     async def advancedmenu_submenu_create(self, ctx, *, label):
         """Create a submenu for the advanced menu."""
-        if label in self.config["submenus"]:
+        sanitized_label = label.lower().replace(" ", "_")
+        if sanitized_label in self.config["submenus"]:
             return await ctx.send("That submenu already exists. Please use a unique label or use `advancedmenu submenu delete` to delete it.")
 
-        self.config["submenus"][label] = {}
+        self.config["submenus"][sanitized_label] = {}
         await self.update_config()
         await ctx.send("Submenu created.")
 
@@ -387,6 +397,7 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_submenu.command(name="delete")
     async def advancedmenu_submenu_delete(self, ctx, *, label):
         """Delete a submenu for the advanced menu."""
+        label = label.lower().replace(" ", "_")
         if label not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist.")
 
@@ -412,6 +423,7 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_submenu.command(name="show")
     async def advancedmenu_submenu_show(self, ctx, *, label):
         """Show the options of a submenu."""
+        label = label.lower().replace(" ", "_")
         if label not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist. Use `advancedmenu submenu create` to add it.")
 
@@ -432,6 +444,7 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_submenu_option.command(name="show")
     async def advancedmenu_submenu_option_show(self, ctx, *, label):
         """Show the details of an option in the submenu"""
+        label = label.lower().replace(" ", "_")
         if label not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist. Use `advancedmenu submenu create` to add it.")
 
@@ -464,6 +477,8 @@ class AdvancedMenu(commands.Cog):
         def typecheck(m):
             return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["command", "submenu"]
 
+        submenu = submenu.lower().replace(" ", "_")
+
         if submenu not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist.")
 
@@ -473,14 +488,15 @@ class AdvancedMenu(commands.Cog):
         await ctx.send("You can send `cancel` at any time to cancel the process.")
         await ctx.send("What is the label of the option?")
         label = (await self.bot.wait_for("message", check=check)).content
+        sanitized_label = label.lower().replace(" ", "_")
 
         if label.lower() == "cancel":
             return await ctx.send("Cancelled.")
 
-        if label == "Main menu":
+        if label.lower() == "main menu":
             return await ctx.send("You cannot use that label.")
 
-        if label in self.config["submenus"][submenu]:
+        if sanitized_label in self.config["submenus"][submenu]:
             await ctx.send("That option already exists. Use `advancedmenu submenu edit` to edit it.")
             return
 
@@ -510,11 +526,13 @@ class AdvancedMenu(commands.Cog):
         else:
             await ctx.send("What is the label of the submenu for the option?")
         callback = (await self.bot.wait_for("message", check=check)).content
+        if type != "command":
+            callback = callback.lower().replace(" ", "_")
 
         if type == "submenu" and callback not in self.config["submenus"]:
             return await ctx.send("That submenu does not exist. Use `advancedmenu submenu create` to add it.")
 
-        self.config["submenus"][submenu][label] = {
+        self.config["submenus"][submenu][sanitized_label] = {
             "label": label,
             "description": description,
             "emoji": emoji,
@@ -528,12 +546,14 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_submenu_option.command(name="remove")
     async def advancedmenu_submenu_option_remove(self, ctx, *, submenu: str):
         """Remove an option from the advanced submenu."""
+        submenu = submenu.lower().replace(" ", "_")
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
 
         await ctx.send("You can send `cancel` at any time to cancel the process.")
         await ctx.send("What is the label of the option to remove?")
         label = (await self.bot.wait_for("message", check=check)).content
+        label = label.lower().replace(" ", "_")
 
         if label.lower() == "cancel":
             return await ctx.send("Cancelled.")
@@ -549,6 +569,7 @@ class AdvancedMenu(commands.Cog):
     @advancedmenu_submenu_option.command(name="edit")
     async def advancedmenu_submenu_option_edit(self, ctx, *, submenu: str):
         """Edit an option from the advanced submenu."""
+        submenu = submenu.lower().replace(" ", "_")
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel
 
@@ -561,6 +582,7 @@ class AdvancedMenu(commands.Cog):
         await ctx.send("You can send `cancel` at any time to cancel the process.")
         await ctx.send("What is the label of the option to edit?")
         label = (await self.bot.wait_for("message", check=check)).content
+        label = label.lower().replace(" ", "_")
 
         if label.lower() == "cancel":
             return await ctx.send("Cancelled.")
@@ -594,6 +616,8 @@ class AdvancedMenu(commands.Cog):
         else:
             await ctx.send("What is the label of the submenu for the option?")
         callback = (await self.bot.wait_for("message", check=check)).content
+        if type != "command":
+            callback = callback.lower().replace(" ", "_")
 
         if callback.lower() == "cancel":
             return await ctx.send("Cancelled.")
@@ -645,7 +669,7 @@ class AdvancedMenu(commands.Cog):
         if not ctx.message.attachments:
             return await ctx.send("You must attach a json file to load the config from.")
         b = await ctx.message.attachments[0].read()
-        json_data = b.decode("utf-8").replace("'", '"')
+        json_data = b.decode("utf-8")
 
         # Load json and validate it
         try:
