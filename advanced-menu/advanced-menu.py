@@ -73,8 +73,9 @@ class DropdownView(discord.ui.View):
 
     async def on_timeout(self):
         await self.msg.edit(view=None)
+        await self.msg.channel.send("Timed out")
         if self.config["close_on_timeout"]:
-            await invoke_commands("close The menu selection timed out.", self.bot, self.thread, DummyMessage(copy(self.thread._genesis_message)))
+            await self.thread.close(closer=self.bot.guild.me)
 
     async def done(self):
         self.stop()
