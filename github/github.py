@@ -26,9 +26,9 @@ class GithubPlugin(commands.Cog):
             num = match.group(2)
 
             if repo == "modmail":
-                repo = "kyb3r/modmail"
+                repo = "modmail-dev/modmail"
             elif repo == "logviewer":
-                repo = "kyb3r/logviewer"
+                repo = "modmail-dev/logviewer"
 
             async with self.bot.session.get(
                 f"https://api.github.com/repos/{repo}/pulls/{num}"
