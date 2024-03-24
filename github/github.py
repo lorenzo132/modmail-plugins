@@ -99,6 +99,5 @@ class GithubPlugin(commands.Cog):
             )
         return embed
 
-
-async setup(bot):
+async def setup(bot):
     await bot.add_cog(GithubPlugin(bot))
