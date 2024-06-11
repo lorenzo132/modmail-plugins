@@ -37,7 +37,7 @@ class OpenAIResponder(commands.Cog):
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post('https://api.openai.com/v1/completions', headers=headers, json=data) as resp:
+                async with session.post('https://api.openai.com/v1/chat', headers=headers, json=data) as resp:
                     if resp.status == 200:
                         response_data = await resp.json()
                         logger.info(f"OpenAI API response: {response_data}")
