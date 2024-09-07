@@ -1,13 +1,14 @@
 import discord
 from discord.ext import commands
 from discord import FFmpegPCMAudio
-import youtube_dl
+import yt_dlp as youtube_dl
 import asyncio
 import os
 
+# Suppress noise about console usage from errors
 youtube_dl.utils.bug_reports_message = lambda: ''
 
-# Configure YouTube downloader options
+# Configure yt-dlp downloader options
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -19,7 +20,11 @@ ytdl_format_options = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0'  # Bind to ipv4
+    'source_address': '0.0.0.0',  # Bind to ipv4
+    'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    },
+    # 'cookiefile': 'path/to/cookies.txt'  # Uncomment if using cookies
 }
 
 ffmpeg_options = {
