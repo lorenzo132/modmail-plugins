@@ -1,24 +1,23 @@
 import discord
 from discord.ext import commands
-import wavelink
+import lavalink
 import asyncio
 
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.loop = False
+        self.lavalink = None
 
     @commands.Cog.listener()
     async def on_ready(self):
         # Connect to Lavalink server when the bot is ready
         await self.bot.wait_until_ready()
-        await wavelink.NodePool.create_node(
-            bot=self.bot,
-            host='localhost',  # Lavalink server host
-            port=2333,          # Lavalink server port
-            password='youshallnotpass'  # Lavalink server password
-        )
-
+        self.lavalink = lavalink.Client(self.bot.user.id)
+        self.lavalink.add_node('localhost', 2333, 'youshallnotpass', 'na', 60)  # Lavalink server details
+        self.bot.add_view(self.lavalink)
+        self.bot.add_listener(self.lavalink.voice_update_handler, 'on_socket_response')
+    
     @commands.command(name='join', help='Tells the bot to join the voice channel')
     async def join(self, ctx):
         if not ctx.author.voice:
@@ -32,25 +31,24 @@ class Music(commands.Cog):
 
     @commands.command(name='play', help='Play a song')
     async def play(self, ctx, *, search: str):
-        node = wavelink.NodePool.get_node()
-        player = ctx.voice_client
-
-        if not player:
+        if not ctx.voice_client:
             await ctx.invoke(self.join)
 
+        node = self.lavalink.nodes[0]  # Assuming you only have one node
         query = f"ytsearch:{search}"
-        track = await node.get_tracks(query)
-        if not track:
+        results = await node.get_tracks(query)
+
+        if not results:
             return await ctx.send("No results found.")
 
-        track = track[0]
-        await player.play(track)
+        track = results[0]
+        await ctx.voice_client.play(track)
         await ctx.send(f'Now playing: {track.title}')
 
     @commands.command(name='pause', help='Pauses the song')
     async def pause(self, ctx):
         if ctx.voice_client and ctx.voice_client.is_playing():
-            ctx.voice_client.pause()
+            await ctx.voice_client.pause()
             await ctx.send("Paused the song!")
         else:
             await ctx.send("No audio is playing.")
@@ -58,7 +56,7 @@ class Music(commands.Cog):
     @commands.command(name='resume', help='Resumes the song')
     async def resume(self, ctx):
         if ctx.voice_client and ctx.voice_client.is_paused():
-            ctx.voice_client.resume()
+            await ctx.voice_client.resume()
             await ctx.send("Resumed the song!")
         else:
             await ctx.send("The audio is not paused.")
@@ -91,10 +89,10 @@ class Music(commands.Cog):
 
     @commands.command(name='search', help='Search for a song and select a result to play')
     async def search(self, ctx, *, query):
-        node = wavelink.NodePool.get_node()
-        tracks = await node.get_tracks(f"ytsearch:5 {query}")
+        node = self.lavalink.nodes[0]  # Assuming you only have one node
+        results = await node.get_tracks(f"ytsearch:5 {query}")
 
-        result_text = "\n".join(f"{i+1}. {track.title}" for i, track in enumerate(tracks))
+        result_text = "\n".join(f"{i+1}. {track.title}" for i, track in enumerate(results))
         await ctx.send(f"Search results:\n{result_text}")
 
         def check(msg):
@@ -103,8 +101,8 @@ class Music(commands.Cog):
         try:
             choice = await self.bot.wait_for('message', check=check, timeout=30.0)
             index = int(choice.content) - 1
-            if 0 <= index < len(tracks):
-                await self.play(ctx, search=tracks[index].uri)
+            if 0 <= index < len(results):
+                await self.play(ctx, search=results[index].uri)
             else:
                 await ctx.send("Invalid selection.")
         except asyncio.TimeoutError:
