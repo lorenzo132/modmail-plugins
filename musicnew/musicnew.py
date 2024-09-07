@@ -1,94 +1,55 @@
 import discord
 from discord.ext import commands
-from discord import FFmpegPCMAudio
-import yt_dlp as youtube_dl
+import wavelink
 import asyncio
-import os
-
-# Suppress noise about console usage from errors
-youtube_dl.utils.bug_reports_message = lambda: ''
-
-# Configure yt-dlp downloader options
-ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',  # Bind to ipv4
-    'headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    },
-    # 'cookiefile': 'path/to/cookies.txt'  # Uncomment if using cookies
-}
-
-ffmpeg_options = {
-    'options': '-vn'
-}
-
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-
-class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.5):
-        super().__init__(source, volume)
-        self.data = data
-        self.title = data.get('title')
-        self.url = data.get('url')
-
-    @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
-        loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-
-        if 'entries' in data:
-            # Take first item from a playlist
-            data = data['entries'][0]
-
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
-
 
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.current_player = None
         self.loop = False
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Connect to Lavalink server when the bot is ready
+        await self.bot.wait_until_ready()
+        await wavelink.NodePool.create_node(
+            bot=self.bot,
+            host='localhost',  # Lavalink server host
+            port=2333,          # Lavalink server port
+            password='youshallnotpass'  # Lavalink server password
+        )
 
     @commands.command(name='join', help='Tells the bot to join the voice channel')
     async def join(self, ctx):
-        if not ctx.message.author.voice:
-            await ctx.send("You are not connected to a voice channel.")
-            return
-        else:
-            channel = ctx.message.author.voice.channel
+        if not ctx.author.voice:
+            return await ctx.send("You are not connected to a voice channel.")
+        channel = ctx.author.voice.channel
 
         if ctx.voice_client is not None:
             return await ctx.voice_client.move_to(channel)
 
         await channel.connect()
 
-    @commands.command(name='play', help='To play song')
+    @commands.command(name='play', help='Play a song')
     async def play(self, ctx, *, search: str):
-        async with ctx.typing():
-            player = await YTDLSource.from_url(search, loop=self.bot.loop, stream=True)
-            ctx.voice_client.play(player, after=lambda e: self.play_next(ctx) if self.loop else None)
-            self.current_player = player
+        node = wavelink.NodePool.get_node()
+        player = ctx.voice_client
 
-        await ctx.send(f'Now playing: {player.title}')
+        if not player:
+            await ctx.invoke(self.join)
 
-    def play_next(self, ctx):
-        if self.loop and self.current_player:
-            ctx.voice_client.play(self.current_player, after=lambda e: self.play_next(ctx) if self.loop else None)
+        query = f"ytsearch:{search}"
+        track = await node.get_tracks(query)
+        if not track:
+            return await ctx.send("No results found.")
+
+        track = track[0]
+        await player.play(track)
+        await ctx.send(f'Now playing: {track.title}')
 
     @commands.command(name='pause', help='Pauses the song')
     async def pause(self, ctx):
-        if ctx.voice_client.is_playing():
+        if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.pause()
             await ctx.send("Paused the song!")
         else:
@@ -96,7 +57,7 @@ class Music(commands.Cog):
 
     @commands.command(name='resume', help='Resumes the song')
     async def resume(self, ctx):
-        if ctx.voice_client.is_paused():
+        if ctx.voice_client and ctx.voice_client.is_paused():
             ctx.voice_client.resume()
             await ctx.send("Resumed the song!")
         else:
@@ -104,14 +65,15 @@ class Music(commands.Cog):
 
     @commands.command(name='stop', help='Stops the song')
     async def stop(self, ctx):
-        await ctx.voice_client.disconnect()
+        if ctx.voice_client:
+            await ctx.voice_client.disconnect()
 
     @commands.command(name='volume', help='Changes the player\'s volume')
     async def volume(self, ctx, volume: int):
         if ctx.voice_client is None:
             return await ctx.send("Not connected to a voice channel.")
 
-        ctx.voice_client.source.volume = volume / 100
+        ctx.voice_client.volume = volume / 100
         await ctx.send(f"Changed volume to {volume}%")
 
     @commands.command(name='seek', help='Seek to a specific time in the song')
@@ -119,11 +81,7 @@ class Music(commands.Cog):
         if not ctx.voice_client or not ctx.voice_client.is_playing():
             return await ctx.send("No song is currently playing.")
         
-        ctx.voice_client.stop()  # Stop the current playback
-
-        player = FFmpegPCMAudio(self.current_player.url, before_options=f'-ss {seconds}', **ffmpeg_options)
-        ctx.voice_client.play(player, after=lambda e: self.play_next(ctx) if self.loop else None)
-
+        ctx.voice_client.position = seconds * 1000
         await ctx.send(f"Seeked to {seconds} seconds in the song.")
 
     @commands.command(name='loop', help='Loops the current song')
@@ -133,10 +91,11 @@ class Music(commands.Cog):
 
     @commands.command(name='search', help='Search for a song and select a result to play')
     async def search(self, ctx, *, query):
-        async with ctx.typing():
-            info = ytdl.extract_info(f"ytsearch5:{query}", download=False)['entries']
-            result_text = "\n".join(f"{i+1}. {entry['title']}" for i, entry in enumerate(info))
-            await ctx.send(f"Search results:\n{result_text}")
+        node = wavelink.NodePool.get_node()
+        tracks = await node.get_tracks(f"ytsearch:5 {query}")
+
+        result_text = "\n".join(f"{i+1}. {track.title}" for i, track in enumerate(tracks))
+        await ctx.send(f"Search results:\n{result_text}")
 
         def check(msg):
             return msg.author == ctx.author and msg.channel == ctx.channel and msg.content.isdigit()
@@ -144,8 +103,8 @@ class Music(commands.Cog):
         try:
             choice = await self.bot.wait_for('message', check=check, timeout=30.0)
             index = int(choice.content) - 1
-            if 0 <= index < len(info):
-                await self.play(ctx, search=info[index]['webpage_url'])
+            if 0 <= index < len(tracks):
+                await self.play(ctx, search=tracks[index].uri)
             else:
                 await ctx.send("Invalid selection.")
         except asyncio.TimeoutError:
@@ -153,18 +112,13 @@ class Music(commands.Cog):
 
     @commands.command(name='download', help='Downloads the current playing song and sends it as an mp3')
     async def download(self, ctx):
-        if self.current_player is None:
-            return await ctx.send("No song is currently playing.")
-
-        async with ctx.typing():
-            filename = ytdl.prepare_filename(ytdl.extract_info(self.current_player.url, download=True))
-            await ctx.send(file=discord.File(filename))
-            os.remove(filename)  # Remove the file after sending
+        await ctx.send("Downloading is not supported with Lavalink.")
 
     @commands.command(name='nowplaying', help='Shows information about the currently playing track')
     async def nowplaying(self, ctx):
-        if self.current_player:
-            await ctx.send(f"Now playing: {self.current_player.title}\nURL: {self.current_player.url}")
+        if ctx.voice_client and ctx.voice_client.is_playing():
+            track = ctx.voice_client.source
+            await ctx.send(f"Now playing: {track.title}\nURL: {track.uri}")
         else:
             await ctx.send("No song is currently playing.")
 
