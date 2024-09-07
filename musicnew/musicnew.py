@@ -15,7 +15,8 @@ class Music(commands.Cog):
         self.bot.lavalink.add_node(
             host='localhost',     # Replace with your Lavalink host
             port=2333,            # Replace with your Lavalink port
-            password='youshallnotpass'  # Replace with your Lavalink password
+            password='youshallnotpass',  # Replace with your Lavalink password
+            region='us_central'   # Replace with your region
         )
         self.bot.add_listener(self.track_hook, 'on_socket_response')
 
