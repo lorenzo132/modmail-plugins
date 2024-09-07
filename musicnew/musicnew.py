@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import lavalink
-import asyncio
 
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -13,9 +12,10 @@ class Music(commands.Cog):
     async def on_ready(self):
         # Connect to Lavalink server when the bot is ready
         await self.bot.wait_until_ready()
+        # Initialize Lavalink client
         self.lavalink = lavalink.Client(self.bot.user.id)
-        self.lavalink.add_node('localhost', 2333, 'youshallnotpass', 'na', 60)  # Lavalink server details
-        self.bot.add_view(self.lavalink)
+        # Add Lavalink node with IP, port, and password
+        self.lavalink.add_node('localhost', 2333, 'youshallnotpass', 'na', 60)
         self.bot.add_listener(self.lavalink.voice_update_handler, 'on_socket_response')
     
     @commands.command(name='join', help='Tells the bot to join the voice channel')
