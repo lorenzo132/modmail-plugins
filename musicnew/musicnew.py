@@ -1,210 +1,192 @@
 import discord
 from discord.ext import commands
-import wavelink
+import yt_dlp as youtube_dl
+from async_timeout import timeout
+from functools import partial
+import asyncio
 import random
-import os
-from dotenv import load_dotenv
+import ipaddress
 
-# Load the environment variables from .env file
-load_dotenv()
+# Suppress noise about console usage from yt-dlp
+youtube_dl.utils.bug_reports_message = lambda: ''
 
-# Fetch the Lavalink configuration from environment variables
-LAVALINK_HOST = os.getenv('LAVALINK_HOST')
-LAVALINK_PORT = int(os.getenv('LAVALINK_PORT'))
-LAVALINK_PASSWORD = os.getenv('LAVALINK_PASSWORD')
+# Function to generate a random IPv6 address from a given CIDR block
+def random_ipv6_from_range(cidr_block):
+    network = ipaddress.IPv6Network(cidr_block)
+    random_ip_int = random.randint(int(network.network_address), int(network.broadcast_address))
+    return str(ipaddress.IPv6Address(random_ip_int))
+
+# Example IPv6 range for random IP generation (adjust to your own range)
+ipv6_cidr_block = '2001:db8::/64'
+
+# Configure yt-dlp options with random IPv6 rotation
+ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': random_ipv6_from_range(ipv6_cidr_block)  # Use a random IPv6 address
+}
+
+ffmpeg_options = {
+    'options': '-vn'
+}
+
+ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+        self.data = data
+        self.title = data.get('title')
+        self.url = data.get('url')
+
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=False):
+        # Update source address to a new random IPv6 before each request
+        ytdl.params['source_address'] = random_ipv6_from_range(ipv6_cidr_block)
+        loop = loop or asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+
+        if 'entries' in data:
+            # Take the first item from a playlist
+            data = data['entries'][0]
+
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+
 
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.music_queue = []
-        self.loop = False  # To track if looping is enabled
+        self.queue = {}
+        self.current = {}
+        self.loop = {}
+
+    async def ensure_voice(self, ctx):
+        if not ctx.voice_client:
+            if ctx.author.voice:
+                await ctx.author.voice.channel.connect()
+            else:
+                await ctx.send("You are not connected to a voice channel.")
+                raise commands.CommandError("Author not connected to a voice channel.")
+        elif ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
+
+    @commands.command(name="play", aliases=["p"])
+    async def play(self, ctx, *, url):
+        """Plays a song or adds it to the queue."""
+        await self.ensure_voice(ctx)
+
+        async with ctx.typing():
+            try:
+                player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
+                ctx.voice_client.play(player, after=lambda e: self.next(ctx))
+                self.current[ctx.guild.id] = player
+                await ctx.send(f'Now playing: {player.title}')
+            except Exception as e:
+                await ctx.send(f"An error occurred: {e}")
+
+    def next(self, ctx):
+        if ctx.guild.id in self.queue and len(self.queue[ctx.guild.id]) > 0:
+            next_song = self.queue[ctx.guild.id].pop(0)
+            self.bot.loop.create_task(self.play(ctx, url=next_song))
+        else:
+            self.current.pop(ctx.guild.id, None)
+
+    @commands.command(name="pause")
+    async def pause(self, ctx):
+        """Pauses the currently playing song."""
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.pause()
+            await ctx.send("Playback paused.")
+
+    @commands.command(name="resume")
+    async def resume(self, ctx):
+        """Resumes the currently paused song."""
+        if ctx.voice_client.is_paused():
+            ctx.voice_client.resume()
+            await ctx.send("Playback resumed.")
+
+    @commands.command(name="skip")
+    async def skip(self, ctx):
+        """Skips the currently playing song."""
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
+            await ctx.send("Song skipped.")
+
+    @commands.command(name="stop")
+    async def stop(self, ctx):
+        """Stops playing and clears the queue."""
+        if ctx.voice_client:
+            ctx.voice_client.stop()
+            self.queue[ctx.guild.id] = []
+            await ctx.send("Playback stopped and queue cleared.")
+
+    @commands.command(name="queue")
+    async def queue_(self, ctx):
+        """Shows the current song queue."""
+        if ctx.guild.id in self.queue and self.queue[ctx.guild.id]:
+            await ctx.send("\n".join(self.queue[ctx.guild.id]))
+        else:
+            await ctx.send("The queue is currently empty.")
+
+    @commands.command(name="loop")
+    async def loop_(self, ctx):
+        """Toggles looping of the currently playing song."""
+        self.loop[ctx.guild.id] = not self.loop.get(ctx.guild.id, False)
+        await ctx.send(f"Looping is now {'enabled' if self.loop[ctx.guild.id] else 'disabled'}.")
+
+    @commands.command(name="shuffle")
+    async def shuffle(self, ctx):
+        """Shuffles the queue."""
+        if ctx.guild.id in self.queue and len(self.queue[ctx.guild.id]) > 1:
+            random.shuffle(self.queue[ctx.guild.id])
+            await ctx.send("Queue shuffled.")
+        else:
+            await ctx.send("Not enough songs in the queue to shuffle.")
+
+    @commands.command(name="seek")
+    async def seek(self, ctx, *, position: int):
+        """Seeks to a specific point in the song."""
+        ctx.voice_client.stop()
+        await ctx.send(f"Seeking to {position} seconds not yet implemented.")
+
+    @commands.command(name="volume")
+    async def volume(self, ctx, volume: int):
+        """Changes the player's volume."""
+        if ctx.voice_client and ctx.voice_client.source:
+            ctx.voice_client.source.volume = volume / 100
+            await ctx.send(f"Volume set to {volume}%")
+
+    @commands.command(name="nowplaying", aliases=["np"])
+    async def nowplaying(self, ctx):
+        """Displays the currently playing song."""
+        if ctx.guild.id in self.current and self.current[ctx.guild.id]:
+            await ctx.send(f"Now playing: {self.current[ctx.guild.id].title}")
+        else:
+            await ctx.send("No song is currently playing.")
+
+    @play.before_invoke
+    @stop.before_invoke
+    @pause.before_invoke
+    @resume.before_invoke
+    @skip.before_invoke
+    async def ensure_voice_state(self, ctx):
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.send("You are not connected to a voice channel.")
+            raise commands.CommandError("Author not connected to a voice channel.")
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Connect to Lavalink when the bot is ready."""
-        await wavelink.NodePool.create_node(bot=self.bot,
-                                            host=LAVALINK_HOST,
-                                            port=LAVALINK_PORT,
-                                            password=LAVALINK_PASSWORD,
-                                            region="us_central")
+        print(f'Bot is ready and logged in as {self.bot.user.name} ({self.bot.user.id})')
 
-    async def connect_to_voice(self, ctx):
-        """Connects to a voice channel."""
-        if not ctx.author.voice:
-            await ctx.send("Please join a voice channel first.")
-            return None
-
-        player = ctx.voice_client
-        if not player:
-            player = await ctx.author.voice.channel.connect(cls=wavelink.Player)
-        else:
-            if ctx.author.voice.channel.id != player.channel.id:
-                await player.move_to(ctx.author.voice.channel)
-
-        return player
-
-    @commands.command(name="join", help="Joins the voice channel")
-    async def join(self, ctx):
-        player = await self.connect_to_voice(ctx)
-        if player:
-            await ctx.send(f"Connected to {ctx.author.voice.channel}")
-
-    @commands.command(name="play", help="Plays a selected song from YouTube")
-    async def play(self, ctx, *, search: str):
-        player = await self.connect_to_voice(ctx)
-        if not player:
-            return
-
-        query = f'ytsearch:{search}'
-        tracks = await wavelink.YouTubeTrack.search(query)
-
-        if not tracks:
-            await ctx.send("No tracks found.")
-            return
-
-        track = tracks[0]
-
-        self.music_queue.append(track)
-        await ctx.send(f"Added {track.title} to the queue.")
-
-        if not player.is_playing():
-            await self.start_playback(ctx, player)
-
-    async def start_playback(self, ctx, player):
-        if self.music_queue:
-            track = self.music_queue[0]
-
-            await player.play(track)
-            await ctx.send(f"Now playing: {track.title}")
-
-            if not self.loop:
-                self.music_queue.pop(0)
-        else:
-            await ctx.send("The queue is empty.")
-
-    @commands.command(name="pause", help="Pauses the current song")
-    async def pause(self, ctx):
-        player = ctx.voice_client
-        if player and player.is_playing():
-            await player.pause()
-            await ctx.send("Paused the current track.")
-        else:
-            await ctx.send("No music is playing to pause.")
-
-    @commands.command(name="resume", help="Resumes the current song")
-    async def resume(self, ctx):
-        player = ctx.voice_client
-        if player and player.is_paused():
-            await player.resume()
-            await ctx.send("Resumed the track.")
-        else:
-            await ctx.send("The music is not paused or nothing is playing.")
-
-    @commands.command(name="skip", help="Skips the current song")
-    async def skip(self, ctx):
-        player = ctx.voice_client
-        if player and player.is_playing():
-            await player.stop()
-            await self.start_playback(ctx, player)
-            await ctx.send("Skipped the current song.")
-        else:
-            await ctx.send("No music is playing to skip.")
-
-    @commands.command(name="queue", help="Displays the current queue")
-    async def queue(self, ctx):
-        if not self.music_queue:
-            await ctx.send("The queue is currently empty.")
-            return
-
-        queue_list = "\n".join([f"{i+1}. {track.title}" for i, track in enumerate(self.music_queue)])
-        await ctx.send(f"Current queue:\n{queue_list}")
-
-    @commands.command(name="nowplaying", help="Shows the current playing song")
-    async def nowplaying(self, ctx):
-        player = ctx.voice_client
-        if player and player.is_playing():
-            await ctx.send(f"Now playing: {player.track.title}")
-        else:
-            await ctx.send("Nothing is playing right now.")
-
-    @commands.command(name="volume", help="Change the volume of the music")
-    async def volume(self, ctx, volume: int):
-        player = ctx.voice_client
-        if not player:
-            await ctx.send("Bot is not connected to a voice channel.")
-            return
-
-        if volume < 0 or volume > 100:
-            await ctx.send("Volume must be between 0 and 100.")
-        else:
-            await player.set_volume(volume)
-            await ctx.send(f"Volume set to {volume}%")
-
-    @commands.command(name="search", help="Search for a song and select the one to play")
-    async def search(self, ctx, *, search: str):
-        tracks = await wavelink.YouTubeTrack.search(query=search)
-        if not tracks:
-            await ctx.send("No tracks found.")
-            return
-
-        # Display search results
-        embed = discord.Embed(title="Search Results", description="\n".join([f"{i + 1}. {track.title}" for i, track in enumerate(tracks[:5])]), color=discord.Color.blue())
-        await ctx.send(embed=embed)
-
-        def check(msg):
-            return msg.author == ctx.author and msg.channel == ctx.channel and msg.content.isdigit()
-
-        try:
-            response = await self.bot.wait_for("message", check=check, timeout=30.0)
-            choice = int(response.content)
-            if 1 <= choice <= 5:
-                chosen_track = tracks[choice - 1]
-                self.music_queue.append(chosen_track)
-                await ctx.send(f"Added {chosen_track.title} to the queue.")
-            else:
-                await ctx.send("Invalid choice. Please select a number between 1 and 5.")
-        except asyncio.TimeoutError:
-            await ctx.send("You took too long to respond.")
-
-    @commands.command(name="shuffle", help="Shuffles the queue")
-    async def shuffle(self, ctx):
-        random.shuffle(self.music_queue)
-        await ctx.send("Shuffled the queue.")
-
-    @commands.command(name="seek", help="Seeks to a specific position in the current track (in seconds)")
-    async def seek(self, ctx, position: int):
-        player = ctx.voice_client
-        if player and player.is_playing():
-            await player.seek(position * 1000)  # Seek in milliseconds
-            await ctx.send(f"Seeked to {position} seconds.")
-        else:
-            await ctx.send("No music is playing to seek.")
-
-    @commands.command(name="loop", help="Loops the current track or queue")
-    async def loop(self, ctx):
-        self.loop = not self.loop
-        if self.loop:
-            await ctx.send("Looping enabled.")
-        else:
-            await ctx.send("Looping disabled.")
-
-    @commands.command(name="remove", help="Removes a song from the queue by its position")
-    async def remove(self, ctx, position: int):
-        """Removes a song from the queue by its position in the list."""
-        if 1 <= position <= len(self.music_queue):
-            removed_track = self.music_queue.pop(position - 1)
-            await ctx.send(f"Removed {removed_track.title} from the queue.")
-        else:
-            await ctx.send(f"Invalid position. Please provide a number between 1 and {len(self.music_queue)}.")
-
-    @commands.command(name="disconnect", help="Disconnects the bot from the voice channel")
-    async def disconnect(self, ctx):
-        player = ctx.voice_client
-        if player:
-            await player.disconnect()
-            await ctx.send("Disconnected from the voice channel.")
-        else:
-            await ctx.send("The bot is not connected to a voice channel.")
 
 async def setup(bot):
     await bot.add_cog(Music(bot))
