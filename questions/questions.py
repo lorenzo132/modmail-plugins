@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 logger = getLogger(__name__)
 
-
 class Questions(commands.Cog):
     """Reaction-based menu for threads"""
 
@@ -27,100 +26,116 @@ class Questions(commands.Cog):
         self.db = self.bot.plugin_db.get_partition(self)
 
     async def wait_for_channel_response(self, channel: discord.TextChannel,
-                                        member: discord.Member, *, timeout: int = 15) -> discord.Message:
-        return await self.bot.wait_for('message',
-                                       check=lambda m: m.channel == channel and m.author == member,
-                                       timeout=timeout)
+                                        member: discord.Member, *, timeout: int = 15) -> Optional[discord.Message]:
+        try:
+            return await self.bot.wait_for(
+                'message',
+                check=lambda m: m.channel == channel and m.author == member,
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            return None
 
-    async def wait_for_dm_response(self, user: discord.User, *, timeout: int = 15) -> discord.Message:
-        return await self.bot.wait_for('message',
-                                       check=lambda m: isinstance(m.channel, discord.DMChannel) and m.author == user,
-                                       timeout=timeout)
+    async def wait_for_dm_response(self, user: discord.User, *, timeout: int = 15) -> Optional[discord.Message]:
+        try:
+            return await self.bot.wait_for(
+                'message',
+                check=lambda m: isinstance(m.channel, discord.DMChannel) and m.author == user,
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            return None
 
     @commands.Cog.listener()
     async def on_thread_ready(self, thread: Thread,
                               creator: Union[discord.Member, discord.User, None],
                               category: Optional[discord.CategoryChannel],
                               initial_message: Optional[discord.Message]):
-        """Sends out menu to user"""
+        """Handles the thread readiness event and initiates the question process."""
         config = await self.db.find_one({'_id': 'config'}) or {}
-        responses = {}
-        if not config.get('questions'):  # no questions set up
+        if not config.get('questions'):
+            logger.info("No questions configured.")
             return
 
+        responses = {}
         q_message = cast(discord.Message, DummyMessage(copy.copy(initial_message)))
         q_message.author = self.bot.modmail_guild.me
-        m = None
 
         for question in config['questions']:
             q_message.content = question
             await thread.reply(q_message)
 
-            try:
-                m = await self.wait_for_dm_response(thread.recipient, timeout=900)  # 15m
-            except asyncio.TimeoutError:
-                await thread.close(closer=self.bot.modmail_guild.me,
-                                   message='Closed due to inactivity and not responding to questions.')
+            m = await self.wait_for_dm_response(thread.recipient, timeout=900)  # 15 minutes
+            if not m:
+                await thread.close(
+                    closer=self.bot.modmail_guild.me,
+                    message='Closed due to inactivity and not responding to questions.'
+                )
                 return
-            else:
-                answer = m.content if m.content.strip() else "<No Message Content>"
-                if len(m.attachments) > 0:
-                    answer += "\n"
-                    for attachment in m.attachments:
-                        answer += f"\n`{attachment.filename}`: {attachment.url}"
 
-                responses[question] = answer
+            answer = m.content.strip() if m.content.strip() else "<No Message Content>"
+            if m.attachments:
+                attachment_details = "\n".join(
+                    f"`{attachment.filename}`: {attachment.url}" for attachment in m.attachments
+                )
+                answer += f"\n{attachment_details}"
 
-        await asyncio.sleep(1)
+            responses[question] = answer
+
         embed = discord.Embed(color=self.bot.main_color, timestamp=datetime.utcnow())
-        for k, v in responses.items():
-            embed.add_field(name=k, value=v, inline=False)
-        embed.set_author(name=m.author.name, icon_url=m.author.avatar.url)
+        for question, answer in responses.items():
+            embed.add_field(name=question, value=answer, inline=False)
+        embed.set_author(name=thread.recipient.name, icon_url=thread.recipient.avatar.url)
+
         message = await thread.channel.send(embed=embed)
         await message.pin()
-        q_message.content = 'Your appeal will now be reviewed by our moderation team. ' \
-                            'If you have new information to share about this case, please reply to this message.'
+
+        q_message.content = (
+            'Your appeal will now be reviewed by our moderation team. '
+            'If you have new information to share about this case, please reply to this message.'
+        )
         await thread.reply(q_message)
 
         move_to = self.bot.get_channel(int(config['move_to']))
-        if move_to is None:
+        if not move_to:
             logger.warning("Move-to category does not exist. Not moving.")
         else:
-            await thread.channel.edit(category=move_to, sync_permissions=True)
+            try:
+                await thread.channel.edit(category=move_to, sync_permissions=True)
+            except discord.HTTPException as e:
+                logger.error(f"Failed to move thread: {e}")
 
     @checks.has_permissions(PermissionLevel.MODERATOR)
     @commands.command()
     async def configquestions(self, ctx, *, move_to: CategoryChannel):
-        """Configures the questions plugin.
-
-        `move_to` should be a category to move to after questions answered.
-        Initial category should be defined in `main_category_id`.
-        """
+        """Configures the questions plugin."""
         questions = []
         await ctx.send('How many questions do you have?')
-        try:
-            m = await self.wait_for_channel_response(ctx.channel, ctx.author)
-        except asyncio.TimeoutError:
+
+        m = await self.wait_for_channel_response(ctx.channel, ctx.author)
+        if not m:
             return await ctx.send('Timed out.')
+
         try:
             count = int(m.content)
         except ValueError:
-            return await ctx.send('Invalid input.')
+            return await ctx.send('Invalid input. Please enter a number.')
 
         for i in range(1, count + 1):
             await ctx.send(f"What's question #{i}?")
-            try:
-                m = await self.wait_for_channel_response(ctx.channel, ctx.author)
-            except asyncio.TimeoutError:
+            m = await self.wait_for_channel_response(ctx.channel, ctx.author)
+            if not m:
                 return await ctx.send('Timed out.')
-            if not m.content:
+            if not m.content.strip():
                 return await ctx.send('Question must be text-only.')
-            questions.append(m.content)
+            questions.append(m.content.strip())
 
-        await self.db.find_one_and_update({'_id': 'config'},
-                                          {'$set': {'questions': questions, 'move_to': str(move_to.id)}}, upsert=True)
-        await ctx.send('Saved')
-
+        await self.db.find_one_and_update(
+            {'_id': 'config'},
+            {'$set': {'questions': questions, 'move_to': str(move_to.id)}},
+            upsert=True
+        )
+        await ctx.send('Configuration saved successfully.')
 
 async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(Questions(bot))
