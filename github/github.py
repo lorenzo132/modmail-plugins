@@ -1,30 +1,27 @@
-from __future__ import annotations
-
 import re
 import discord
 from discord.ext import commands
-from typing import TYPE_CHECKING, Union
 
-if TYPE_CHECKING:
-    from bot import ModmailBot
 
 class GithubPlugin(commands.Cog):
-    """GitHub Integration for parsing and displaying pull requests and issues."""
-
-    def __init__(self, bot: ModmailBot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.colors = {
             "pr": {
                 "open": 0x2CBE4E,
-                "closed": discord.Embed.Empty,
-                "merged": discord.Embed.Empty,
+                "closed": None,  # Use None instead of discord.Embed.Empty
+                "merged": None,  # Use None instead of discord.Embed.Empty
             },
-            "issues": {"open": 0xE68D60, "closed": discord.Embed.Empty},
+            "issues": {
+                "open": 0xE68D60,
+                "closed": None,  # Use None instead of discord.Embed.Empty
+            },
         }
-        self.regex = r"(\S+)#(\d+)"
+        self.regex = r"(\S+)#(\d+)"  # Regex to match GitHub repo references
 
     @commands.Cog.listener()
     async def on_message(self, msg: discord.Message):
+        # Ignore bot messages
         if msg.author.bot:
             return
 
@@ -34,63 +31,63 @@ class GithubPlugin(commands.Cog):
 
         repo, num = match.groups()
 
-        # Map shorthand to full repository names
-        repo_mapping = {
-            "modmail": "modmail-dev/modmail",
-            "logviewer": "modmail-dev/logviewer",
-        }
-        repo = repo_mapping.get(repo, repo)
+        # Map short repo names to full repo paths
+        if repo == "modmail":
+            repo = "modmail-dev/modmail"
+        elif repo == "logviewer":
+            repo = "modmail-dev/logviewer"
 
-        pr_data = await self.fetch_github_data(f"https://api.github.com/repos/{repo}/pulls/{num}")
-        if pr_data and "message" not in pr_data:
-            embed = await self.handle_pr(pr_data, repo)
-            await msg.channel.send(embed=embed)
-            return
+        # Try fetching the pull request (PR) or issue data
+        async with self.bot.session.get(
+            f"https://api.github.com/repos/{repo}/pulls/{num}"
+        ) as pr_response:
+            pr_data = await pr_response.json()
 
-        issue_data = await self.fetch_github_data(f"https://api.github.com/repos/{repo}/issues/{num}")
-        if issue_data and "message" not in issue_data:
-            embed = await self.handle_issue(issue_data, repo)
-            await msg.channel.send(embed=embed)
+            if "message" not in pr_data:
+                embed = await self.handle_pr(pr_data, repo)
+                await msg.channel.send(embed=embed)
+                return
 
-    async def fetch_github_data(self, url: str) -> Union[dict, None]:
-        """Fetch data from the GitHub API."""
-        try:
-            async with self.bot.session.get(url) as response:
-                if response.status == 200:
-                    return await response.json()
-                elif response.status == 404:
-                    return None
-                else:
-                    response_text = await response.text()
-                    raise Exception(f"GitHub API returned status {response.status}: {response_text}")
-        except Exception as e:
-            self.bot.logger.error(f"Failed to fetch GitHub data from {url}: {e}")
-            return None
+        async with self.bot.session.get(
+            f"https://api.github.com/repos/{repo}/issues/{num}"
+        ) as issue_response:
+            issue_data = await issue_response.json()
+
+            if "message" not in issue_data:
+                embed = await self.handle_issue(issue_data, repo)
+                await msg.channel.send(embed=embed)
 
     async def handle_pr(self, data: dict, repo: str) -> discord.Embed:
-        """Handle pull request data and return an embed."""
-        state = "merged" if data.get("state") == "closed" and data.get("merged") else data["state"]
-        embed = self._base_embed(data, repo, is_issue=False)
-        embed.colour = self.colors["pr"].get(state, discord.Embed.Empty)
-        embed.add_field(name="Additions", value=data["additions"])
-        embed.add_field(name="Deletions", value=data["deletions"])
-        embed.add_field(name="Commits", value=data["commits"])
+        # Determine the state of the PR
+        state = (
+            "merged"
+            if data["state"] == "closed" and data.get("merged", False)
+            else data["state"]
+        )
+        embed = self._base(data, repo, is_issue=False)
+        embed.colour = self.colors["pr"].get(state)
+        embed.add_field(name="Additions", value=data["additions"], inline=True)
+        embed.add_field(name="Deletions", value=data["deletions"], inline=True)
+        embed.add_field(name="Commits", value=data["commits"], inline=True)
         embed.set_footer(text=f"Pull Request #{data['number']}")
         return embed
 
     async def handle_issue(self, data: dict, repo: str) -> discord.Embed:
-        """Handle issue data and return an embed."""
-        embed = self._base_embed(data, repo, is_issue=True)
-        embed.colour = self.colors["issues"].get(data["state"], discord.Embed.Empty)
+        embed = self._base(data, repo)
+        embed.colour = self.colors["issues"].get(data["state"])
         embed.set_footer(text=f"Issue #{data['number']}")
         return embed
 
-    def _base_embed(self, data: dict, repo: str, is_issue: bool = True) -> discord.Embed:
-        """Generate a base embed for issues and pull requests."""
-        description = (data.get("body", "")[:2045] + "...") if len(data.get("body", "")) > 2048 else data.get("body", "")
+    def _base(self, data: dict, repo: str, is_issue: bool = True) -> discord.Embed:
+        # Truncate the body if it's too long
+        description = (
+            f"{data['body'][:2045]}..." if len(data["body"]) > 2048 else data["body"]
+        )
+
+        # Determine the type (Issue or Pull Request)
         _type = "Issue" if is_issue else "Pull Request"
         title = f"[{repo}] {_type}: #{data['number']} {data['title']}"
-        title = (title[:253] + "...") if len(title) > 256 else title
+        title = f"{title[:253]}..." if len(title) > 256 else title
 
         embed = discord.Embed(title=title, url=data["html_url"], description=description)
         embed.set_thumbnail(url="https://i.imgur.com/J2uqqol.gif")
@@ -99,13 +96,15 @@ class GithubPlugin(commands.Cog):
             icon_url=data["user"]["avatar_url"],
             url=data["user"]["html_url"],
         )
-        embed.add_field(name="Status", value=data["state"].capitalize(), inline=True)
+        embed.add_field(name="Status", value=data["state"], inline=True)
 
+        # Add labels if present
         if data.get("labels"):
             labels = ", ".join(label["name"] for label in data["labels"])
-            embed.add_field(name="Labels", value=labels, inline=True)
+            embed.add_field(name="Labels", value=labels, inline=False)
 
         return embed
 
-async def setup(bot: ModmailBot) -> None:
+
+async def setup(bot: commands.Bot):
     await bot.add_cog(GithubPlugin(bot))
