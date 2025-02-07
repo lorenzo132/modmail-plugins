@@ -93,10 +93,13 @@ class Questions(commands.Cog):
         message = await thread.channel.send(embed=embed)
         await message.pin()
 
-        q_message.content = (
+        # Get the review message from config or use the default
+        review_message = config.get('review_message', 
             'Your appeal will now be reviewed by our moderation team. '
             'If you have new information to share about this case, please reply to this message.'
         )
+        
+        q_message.content = review_message
         await thread.reply(q_message)
 
         move_to = self.bot.get_channel(int(config['move_to']))
@@ -146,9 +149,15 @@ class Questions(commands.Cog):
         except ValueError:
             return await ctx.send('Invalid input. Please enter a valid number.')
 
+        await ctx.send('What should the review message say?')
+        m = await self.wait_for_channel_response(ctx.channel, ctx.author)
+        if not m:
+            return await ctx.send('Timed out.')
+        review_message = m.content.strip() or 'Your appeal will now be reviewed by our moderation team. If you have new information to share about this case, please reply to this message.'
+
         await self.db.find_one_and_update(
             {'_id': 'config'},
-            {'$set': {'questions': questions, 'move_to': str(move_to.id), 'timeout': timeout_seconds}},
+            {'$set': {'questions': questions, 'move_to': str(move_to.id), 'timeout': timeout_seconds, 'review_message': review_message}},
             upsert=True
         )
         await ctx.send('Configuration saved successfully.')
