@@ -61,11 +61,14 @@ class Questions(commands.Cog):
         q_message = cast(discord.Message, DummyMessage(copy.copy(initial_message)))
         q_message.author = self.bot.modmail_guild.me
 
+        # Get the timeout value from config or use the default of 15 minutes
+        timeout = int(config.get('timeout', 15 * 60))  # default to 15 minutes (900 seconds)
+
         for question in config['questions']:
             q_message.content = question
             await thread.reply(q_message)
 
-            m = await self.wait_for_dm_response(thread.recipient, timeout=900)  # 15 minutes
+            m = await self.wait_for_dm_response(thread.recipient, timeout=timeout)
             if not m:
                 await thread.close(
                     closer=self.bot.modmail_guild.me,
@@ -130,9 +133,22 @@ class Questions(commands.Cog):
                 return await ctx.send('Question must be text-only.')
             questions.append(m.content.strip())
 
+        await ctx.send('What is the timeout for responses (in minutes)?')
+        m = await self.wait_for_channel_response(ctx.channel, ctx.author)
+        if not m:
+            return await ctx.send('Timed out.')
+        
+        try:
+            timeout_minutes = int(m.content)
+            if timeout_minutes <= 0:
+                return await ctx.send('Timeout must be a positive number.')
+            timeout_seconds = timeout_minutes * 60
+        except ValueError:
+            return await ctx.send('Invalid input. Please enter a valid number.')
+
         await self.db.find_one_and_update(
             {'_id': 'config'},
-            {'$set': {'questions': questions, 'move_to': str(move_to.id)}},
+            {'$set': {'questions': questions, 'move_to': str(move_to.id), 'timeout': timeout_seconds}},
             upsert=True
         )
         await ctx.send('Configuration saved successfully.')
