@@ -1,2 +1,2 @@
-Free to use modmail-plugins for [Kyber's Discord modmail](https://github.com/kyb3r/modmail)
+Free to use modmail-plugins for [modmail-devs Discord modmail](https://github.com/modmail-dev/modmail)
 (^>^)
