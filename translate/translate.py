@@ -216,7 +216,7 @@ conv = {
 }
 
 class Translate(commands.Cog):
-    """ (∩｀-´)⊃━☆ﾟ.*･｡ﾟ translate text from one language to another """
+    """ translate text from one language to another """
     def __init__(self, bot):
         self.bot = bot
         self.user_color = discord.Colour(0xed791d) ## orange
