@@ -21,11 +21,12 @@ class TopSupporters(commands.Cog):
         async with ctx.typing():
             date = discord.utils.utcnow() - (dt.dt - discord.utils.utcnow())
 
-            logs = await self.bot.api.logs.find({"open": False}).to_list(None)
-            logs = filter(lambda x: isinstance(x['closed_at'], str) and datetime.fromisoformat(x['closed_at']) > date, logs)
+            # Fetch logs for all closed tickets in a single request
+            logs = await self.bot.api.logs.find({"open": False, "closed_at": {"$gt": date.isoformat()}}).to_list(None)
 
             supporters = defaultdict(int)
 
+            # Process the logs
             for l in logs:
                 supporters_involved = set()
                 for x in l['messages']:
@@ -34,10 +35,12 @@ class TopSupporters(commands.Cog):
                 for s in supporters_involved:
                     supporters[s] += 1
 
+            # Sort the supporters by the number of contributions
             supporters_keys = sorted(supporters.keys(), key=lambda x: supporters[x], reverse=True)
 
             fmt = ''
 
+            # Format the top supporters into a list
             n = 1
             for k in supporters_keys:
                 u = self.bot.get_user(int(k))
@@ -45,6 +48,7 @@ class TopSupporters(commands.Cog):
                     fmt += f'**{n}.** `{u}` - {supporters[k]}\n'
                     n += 1
 
+            # Send the formatted response in an embed
             em = discord.Embed(title='Active Supporters', description=fmt, timestamp=date, color=0x7588da)
             em.set_footer(text='Since')
             await ctx.send(embed=em)
