@@ -1,5 +1,7 @@
 import discord
 from discord.ext import commands
+from core import checks
+from core.checks import PermissionLevel
 
 class BotLogout(commands.Cog):
     def __init__(self, bot):
@@ -7,7 +9,8 @@ class BotLogout(commands.Cog):
 
     @checks.has_permissions(PermissionLevel.OWNER)
     @commands.command()
-    async def botlogout(self,__):
+    async def botlogout(self, _):
+        """Logs out the bot"""
         await self.bot.close()
 
 async def setup(bot):
