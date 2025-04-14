@@ -1,27 +1,25 @@
 import discord
-from discord.ext import commands, tasks
- 
- # Add your whitelisted server IDs here
- WHITELISTED_GUILD_IDS = {807290662671220746, 770400759530913822}  # Replace with actual server IDs
- 
- class ServerCleaner(commands.Cog):
-     def __init__(self, bot):
-         self.bot = bot
-         self.guild_check_loop.start()
- 
-     def cog_unload(self):
-         self.guild_check_loop.cancel()
- 
-     @tasks.loop(minutes=5)
-     async def guild_check_loop(self):
-         """Checks all guilds every 5 minutes and leaves those not whitelisted"""
-         for guild in self.bot.guilds:
-             if guild.id not in WHITELISTED_GUILD_IDS:
-                 await guild.leave()
- 
-     @guild_check_loop.before_loop
-     async def before_guild_check(self):
-         await self.bot.wait_until_ready()
- 
- async def setup(bot):
-     await bot.add_cog(ServerCleaner(bot))
+from discord.ext import commands
+from core import checks
+
+# Add your whitelisted server IDs here
+WHITELISTED_GUILD_IDS = {770400759530913822, 807290662671220746}  # Replace with actual server IDs
+
+class ServerCleaner(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.command()
+    @checks.thread_only()
+    async def id(self, ctx):
+        """Returns the Recipient's ID"""
+        await ctx.send(ctx.thread.id)
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild):
+        """Leaves the server if it's not whitelisted"""
+        if guild.id not in WHITELISTED_GUILD_IDS:
+            await guild.leave()
+
+async def setup(bot):
+    await bot.add_cog(ServerCleaner(bot))
