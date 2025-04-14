@@ -1,5 +1,5 @@
 import discord
- from discord.ext import commands, tasks
+from discord.ext import commands, tasks
  
  # Add your whitelisted server IDs here
  WHITELISTED_GUILD_IDS = {807290662671220746, 770400759530913822}  # Replace with actual server IDs
