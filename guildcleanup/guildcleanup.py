@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 
 
-WHITELISTED_GUILD_IDS = {770400759530913822, 807290662671220746}
+WHITELISTED_GUILD_IDS = {1193841000108531764, 1263726542765293720}
 
 
 class GuildCleanup(commands.Cog):
@@ -13,7 +13,7 @@ class GuildCleanup(commands.Cog):
     def cog_unload(self):
         self.cleanup_guilds.cancel()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=2)
     async def cleanup_guilds(self):
         for guild in self.bot.guilds:
             if guild.id not in WHITELISTED_GUILD_IDS:
