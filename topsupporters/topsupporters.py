@@ -16,7 +16,7 @@ class TopSupporters(commands.Cog):
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     @commands.command()
-    async def topsupporters(self, ctx, *, dt: UserFriendlyTime = None, filter_by: str = "replied", start: str = None, end: str = None, exclude: str = None):
+    async def topsupporters(self, ctx, *, args: str = ""):
         """Retrieves top supporters for the specified time period.
         
         **Options:**
@@ -24,6 +24,7 @@ class TopSupporters(commands.Cog):
         - `start`: Start date (YYYY-MM-DD) (optional)
         - `end`: End date (YYYY-MM-DD) (optional)
         - `exclude`: Comma-separated user IDs or usernames to exclude (optional)
+        - `dt`: Time period (e.g., 7d, 1w, 2m) (optional)
         
         **Examples:**
         - Show top supporters by replies in the last week:
@@ -39,7 +40,33 @@ class TopSupporters(commands.Cog):
           !topsupporters filter_by=both exclude=123456789,username
           ```
         """
+        import re
         async with ctx.typing():
+            # Default values
+            dt = None
+            filter_by = "replied"
+            start = None
+            end = None
+            exclude = None
+
+            # Parse args using regex for key=value pairs
+            arg_pattern = re.compile(r"(\w+)=([^\s]+)")
+            for match in arg_pattern.finditer(args):
+                key, value = match.group(1).lower(), match.group(2)
+                if key == "dt":
+                    try:
+                        dt = await UserFriendlyTime().convert(ctx, value)
+                    except Exception:
+                        return await ctx.send(f"Invalid dt value: `{value}`. Example: dt=7d")
+                elif key == "filter_by":
+                    filter_by = value.lower()
+                elif key == "start":
+                    start = value
+                elif key == "end":
+                    end = value
+                elif key == "exclude":
+                    exclude = value
+
             # Parse date range
             now = discord.utils.utcnow()
             if start:
