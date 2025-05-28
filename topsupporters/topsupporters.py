@@ -114,6 +114,9 @@ class TopSupporters(commands.Cog):
                         if x.get('type') in ('anonymous', 'thread_message') and x['author']['mod']:
                             supporters_involved.add(x['author']['id'])
                 if filter_by in ("closed", "both"):
+                    # Debug: print out the keys and possible closer fields
+                    await ctx.send(f"Log keys: {list(l.keys())}")
+                    await ctx.send(f"closer_id: {l.get('closer_id')}, closed_by: {l.get('closed_by')}")
                     closer = l.get('closer_id') or l.get('closed_by')
                     if closer:
                         supporters_involved.add(str(closer))
