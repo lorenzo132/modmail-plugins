@@ -116,7 +116,13 @@ class TopSupporters(commands.Cog):
                 if filter_by in ("closed", "both"):
                     closer = l.get('closer') or l.get('closer_id') or l.get('closed_by')
                     if closer:
-                        supporters_involved.add(str(closer))
+                        # If closer is a dict, extract the id
+                        if isinstance(closer, dict):
+                            closer_id = closer.get('id')
+                        else:
+                            closer_id = str(closer)
+                        if closer_id:
+                            supporters_involved.add(closer_id)
                 for s in supporters_involved:
                     if s not in exclude_ids:
                         supporters[s] += 1
