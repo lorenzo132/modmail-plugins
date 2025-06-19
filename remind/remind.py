@@ -1,14 +1,13 @@
 import discord
 from discord.ext import commands, tasks
 from discord.utils import escape_markdown
-from modmail.plugin import Plugin
 from datetime import datetime, timedelta
 import re
 from typing import Optional
 
-class Remind(Plugin):
+class Remind(commands.Cog):
     def __init__(self, bot):
-        super().__init__(bot)
+        self.bot = bot
         self.collection = self.bot.db["reminders"]
         self.check_reminders.start()
 
@@ -16,17 +15,13 @@ class Remind(Plugin):
         self.check_reminders.cancel()
 
     def parse_timedelta(self, time_str: str) -> Optional[timedelta]:
-        """
-        Parse duration string like 1m, 2h, 3d, 1w, 1mo, 1y into timedelta.
-        """
-        time_str = time_str.strip().lower()
-        match = re.fullmatch(r"(\d+)(s|m|h|d|w|mo|y)", time_str)
+        """Convert a duration string into timedelta."""
+        match = re.fullmatch(r"(\d+)(s|m|h|d|w|mo|y)", time_str.strip().lower())
         if not match:
             return None
 
         num, unit = match.groups()
         num = int(num)
-
         match unit:
             case "s": return timedelta(seconds=num)
             case "m": return timedelta(minutes=num)
@@ -38,10 +33,10 @@ class Remind(Plugin):
 
     @commands.command()
     async def remind(self, ctx, time: str, *, message: str = ""):
-        """Set a reminder. Usage: [p]remind 1h read this --dm"""
+        """Set a reminder. Example: [p]remind 1h Take a break --dm"""
         delta = self.parse_timedelta(time)
         if not delta:
-            return await ctx.send("❌ Invalid time format. Use `s`, `m`, `h`, `d`, `w`, `mo`, `y` (e.g. `2h`, `3d`, `1mo`).")
+            return await ctx.send("❌ Invalid time. Use `s`, `m`, `h`, `d`, `w`, `mo`, `y`.")
 
         dm = False
         if "--dm" in message:
@@ -49,7 +44,6 @@ class Remind(Plugin):
             message = message.replace("--dm", "").strip()
 
         remind_time = datetime.utcnow() + delta
-
         result = await self.collection.insert_one({
             "user_id": ctx.author.id,
             "channel_id": ctx.channel.id,
@@ -92,10 +86,7 @@ class Remind(Plugin):
     @reminder.command(name="cancel")
     async def cancel_reminder(self, ctx, reminder_id: str):
         """Cancel a reminder by its ID (from [p]reminders)."""
-        query = {
-            "user_id": ctx.author.id
-        }
-
+        query = {"user_id": ctx.author.id}
         reminders = await self.collection.find(query).to_list(length=50)
         for r in reminders:
             if str(r["_id"]).startswith(reminder_id):
@@ -114,7 +105,7 @@ class Remind(Plugin):
             if not user:
                 continue
 
-            content = f"⏰ **Reminder**"
+            content = "⏰ **Reminder**"
             if reminder.get("message"):
                 content += f": {escape_markdown(reminder['message'])}"
 
