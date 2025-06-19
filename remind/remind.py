@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord.utils import escape_markdown
 from datetime import datetime, timedelta
+import pytz
 import re
 import asyncio
 import secrets
@@ -11,7 +12,8 @@ class Remind(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.collection = self.bot.db["reminders"]
-        self.short_term_reminders = {}  # {id: asyncio.Task}
+        self.tz_collection = self.bot.db["user_timezones"]
+        self.short_term_reminders = {}
         self.check_reminders.start()
 
     def cog_unload(self):
@@ -37,6 +39,31 @@ class Remind(commands.Cog):
 
     def generate_reminder_id(self):
         return secrets.token_hex(3)
+
+    async def get_user_timezone(self, user_id):
+        doc = await self.tz_collection.find_one({"user_id": user_id})
+        if doc:
+            try:
+                return pytz.timezone(doc["timezone"])
+            except pytz.UnknownTimeZoneError:
+                pass
+        return pytz.utc
+
+    @commands.command(help="""
+Set your preferred timezone (used for reminder timestamps).
+Example: ?timezone Europe/Berlin
+List of valid timezones: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+""")
+    async def timezone(self, ctx, zone: str = None):
+        if not zone:
+            current = await self.get_user_timezone(ctx.author.id)
+            return await ctx.send(f"📍 Your timezone is currently set to `{current.zone}`")
+        try:
+            pytz.timezone(zone)
+        except pytz.UnknownTimeZoneError:
+            return await ctx.send("❌ Unknown timezone. Use a valid tz database name like `Europe/London`, `Asia/Tokyo`, etc.")
+        await self.tz_collection.update_one({"user_id": ctx.author.id}, {"$set": {"timezone": zone}}, upsert=True)
+        await ctx.send(f"✅ Your timezone has been set to `{zone}`.")
 
     @commands.command(help="""
 Set a reminder.
@@ -66,8 +93,13 @@ Example: ?remind 1h Take a break --dm
         reminder_id = self.generate_reminder_id()
         now = datetime.utcnow()
         remind_time = now + delta
-        timestamp = f"<t:{int(remind_time.timestamp())}:R>"
         link = f"https://discord.com/channels/{ctx.guild.id if ctx.guild else '@me'}/{ctx.channel.id}/{ctx.message.id}"
+
+        # Get user timezone
+        tz = await self.get_user_timezone(ctx.author.id)
+        local_remind_time = pytz.utc.localize(remind_time).astimezone(tz)
+        relative_ts = f"<t:{int(remind_time.timestamp())}:R>"
+        absolute_ts = f"<t:{int(remind_time.timestamp())}:F>"
 
         if delta.total_seconds() < 60:
             async def short_reminder():
@@ -96,7 +128,7 @@ Example: ?remind 1h Take a break --dm
             })
 
         await ctx.send(
-            f"✅ Reminder `{reminder_id}` set {'via DM' if dm else 'in this channel'} for {timestamp}.\n[Jump to command]({link})"
+            f"✅ Reminder `{reminder_id}` set {'via DM' if dm else 'in this channel'} for {relative_ts} (`{absolute_ts}`).\n[Jump to command]({link})"
         )
 
     @commands.group(invoke_without_command=True, aliases=["reminders"], help="""
@@ -108,10 +140,12 @@ Displays up to 50 upcoming reminders.
         cursor = self.collection.find({"user_id": ctx.author.id}).sort("remind_at", 1)
         reminders = await cursor.to_list(length=50)
 
+        tz = await self.get_user_timezone(ctx.author.id)
+
         for rid in self.short_term_reminders:
             reminders.append({
                 "reminder_id": rid,
-                "remind_at": now + timedelta(seconds=1),  # show soon
+                "remind_at": now + timedelta(seconds=1),
                 "dm": False,
                 "message": "(short-term)"
             })
@@ -122,9 +156,11 @@ Displays up to 50 upcoming reminders.
         lines = []
         for r in reminders:
             rid = r.get("reminder_id", str(r.get("_id"))[:6])
-            when = f"<t:{int(r['remind_at'].timestamp())}:R>"
+            ts = int(r["remind_at"].timestamp())
+            rel = f"<t:{ts}:R>"
+            abs_time = f"<t:{ts}:F>"
             where = "DM" if r.get("dm") else "Channel"
-            line = f"`{rid}` - {when} ({where})"
+            line = f"`{rid}` - {rel} (`{abs_time}`) ({where})"
             if r.get("message"):
                 line += f": {r['message']}"
             lines.append(line)
