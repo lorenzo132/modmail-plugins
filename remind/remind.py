@@ -1,3 +1,4 @@
+# No changes to the imports needed
 import discord
 from discord.ext import commands, tasks
 from discord.utils import escape_markdown
@@ -47,6 +48,7 @@ Time units:
 
 Flags:
   --dm → Sends the reminder in DMs instead of the channel.
+
 Example:
   ?remind 1h Take a break --dm
 """)
@@ -60,16 +62,15 @@ Example:
             message = message.replace("--dm", "").strip()
 
         remind_time = datetime.now(timezone.utc) + delta
-
         reminder_id = secrets.token_hex(3)
-
         jump_link = ctx.message.jump_url
+
         stored_data = {
             "_id": reminder_id,
             "user_id": ctx.author.id,
             "channel_id": ctx.channel.id,
             "message": message,
-            "remind_at": remind_time,
+            "remind_at": remind_time.replace(tzinfo=timezone.utc),  # ensure utc
             "dm": dm,
             "jump_url": jump_link
         }
@@ -97,9 +98,10 @@ List your active reminders.
         lines = []
         for r in reminders:
             rid = r["_id"]
-            when = f"<t:{int(r['remind_at'].timestamp())}:R>"
+            when = r["remind_at"].astimezone(timezone.utc)  # normalize again
+            when_str = f"<t:{int(when.timestamp())}:R>"
             where = "DM" if r.get("dm") else "Channel"
-            msg = f"`{rid}` - {when} ({where})"
+            msg = f"`{rid}` - {when_str} ({where})"
             if r.get("message"):
                 msg += f": {escape_markdown(r['message'])}"
             lines.append(msg)
@@ -114,7 +116,9 @@ List your active reminders.
     @reminder.command(name="cancel", help="""
 Cancel a reminder by its ID.
 Only your own reminders can be cancelled.
-Usage: ?reminder cancel <ID>
+
+Usage:
+  ?reminder cancel <ID>
 """)
     async def cancel_reminder(self, ctx, reminder_id: str):
         if reminder_id in self.short_term:
@@ -136,9 +140,10 @@ Usage: ?reminder cancel <ID>
     async def check_reminders(self):
         now = datetime.now(timezone.utc)
 
-        # Handle short-term memory reminders
+        # Handle short-term reminders
         for rid, reminder in list(self.short_term.items()):
-            if reminder["remind_at"] <= now:
+            remind_at = reminder["remind_at"].astimezone(timezone.utc)
+            if remind_at <= now:
                 await self.send_reminder(reminder)
                 del self.short_term[rid]
 
