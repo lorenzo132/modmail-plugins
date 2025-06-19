@@ -8,6 +8,8 @@ import secrets
 from typing import Optional
 
 class Remind(commands.Cog):
+    """⏰ Set and manage reminders."""
+
     def __init__(self, bot):
         self.bot = bot
         self.collection = self.bot.db["reminders"]
@@ -18,7 +20,7 @@ class Remind(commands.Cog):
         self.check_reminders.cancel()
 
     def parse_timedelta(self, time_str: str) -> Optional[timedelta]:
-        """Convert a duration string into timedelta."""
+        """Parses shorthand time duration (e.g., 10s, 5m, 2h, 3d) into timedelta."""
         match = re.fullmatch(r"(\d+)(s|m|h|d|w|mo|y)", time_str.strip().lower())
         if not match:
             return None
@@ -35,21 +37,35 @@ class Remind(commands.Cog):
             case "y": return timedelta(days=365 * num)
 
     def escape_mentions(self, message: str) -> str:
-        """Escape mentions so they can't notify."""
+        """Escapes mentions to prevent abuse."""
         return re.sub(r"<(@!?|@&|@)(\d+)>|@everyone|@here", lambda m: escape_markdown(m.group(0)), message)
 
-    @commands.command()
+    @commands.command(name="remind", help="Set a reminder.\nExample: !remind 1h Take a break --dm")
     async def remind(self, ctx, time: str, *, message: str = ""):
-        """Set a reminder. Example: [p]remind 1h Take a break --dm"""
+        """
+        Set a reminder.
+
+        Time units:
+          - s (seconds)
+          - m (minutes)
+          - h (hours)
+          - d (days)
+          - w (weeks)
+          - mo (months)
+          - y (years)
+
+        Flags:
+          --dm → Sends the reminder in DMs instead of the channel.
+        """
         delta = self.parse_timedelta(time)
         if not delta:
-            return await ctx.send("❌ Invalid time. Use `s`, `m`, `h`, `d`, `w`, `mo`, `y`.")
+            return await ctx.send("❌ Invalid time format. Try things like `10m`, `2h`, `1d`.")
 
         dm = "--dm" in message
         if dm:
             message = message.replace("--dm", "").strip()
 
-        reminder_id = secrets.token_hex(3)  # Unique 6-character ID
+        reminder_id = secrets.token_hex(3)
         message = self.escape_mentions(message)
         remind_time = datetime.utcnow() + delta
         message_link = f"https://discord.com/channels/{ctx.guild.id if ctx.guild else '@me'}/{ctx.channel.id}/{ctx.message.id}"
@@ -104,9 +120,12 @@ class Remind(commands.Cog):
         finally:
             self.memory_reminders.pop(reminder_id, None)
 
-    @commands.group(invoke_without_command=True, aliases=["reminders"])
+    @commands.group(name="reminder", aliases=["reminders"], invoke_without_command=True,
+                    help="List all your active reminders.")
     async def reminder(self, ctx):
-        """List your active reminders."""
+        """
+        View all your active reminders.
+        """
         cursor = self.collection.find({"user_id": ctx.author.id}).sort("remind_at", 1)
         reminders = await cursor.to_list(length=50)
         mem_reminders = [
@@ -141,18 +160,19 @@ class Remind(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    @reminder.command(name="cancel")
+    @reminder.command(name="cancel", help="Cancel one of your reminders by ID.\nExample: !reminder cancel abc123")
     async def cancel_reminder(self, ctx, reminder_id: str):
-        """Cancel a reminder by its ID (from [p]reminders)."""
+        """
+        Cancel a reminder you previously set.
 
-        # Cancel from memory
+        To find the ID, run `!reminder`.
+        """
         if reminder_id in self.memory_reminders:
             if self.memory_reminders[reminder_id]["user_id"] != ctx.author.id:
                 return await ctx.send("❌ You can only cancel your own reminders.")
             self.memory_reminders.pop(reminder_id, None)
             return await ctx.send(f"🗑️ Reminder `{reminder_id}` cancelled.")
 
-        # Cancel from DB
         doc = await self.collection.find_one({"_id": reminder_id})
         if not doc:
             return await ctx.send("❌ Reminder not found.")
