@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord.utils import escape_markdown
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 import asyncio
 import secrets
@@ -64,7 +64,7 @@ Example: ?remind 1h Take a break --dm
         message = message.replace("--dm", "").strip()
         escaped_msg = escape_markdown(message)
         reminder_id = self.generate_reminder_id()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         remind_time = now + delta
         timestamp = f"<t:{int(remind_time.timestamp())}:R>"
         link = f"https://discord.com/channels/{ctx.guild.id if ctx.guild else '@me'}/{ctx.channel.id}/{ctx.message.id}"
@@ -104,14 +104,14 @@ List your active reminders.
 Displays up to 50 upcoming reminders.
 """)
     async def reminder(self, ctx):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cursor = self.collection.find({"user_id": ctx.author.id}).sort("remind_at", 1)
         reminders = await cursor.to_list(length=50)
 
         for rid in self.short_term_reminders:
             reminders.append({
                 "reminder_id": rid,
-                "remind_at": now + timedelta(seconds=1),  # show soon
+                "remind_at": now + timedelta(seconds=1),
                 "dm": False,
                 "message": "(short-term)"
             })
@@ -122,9 +122,12 @@ Displays up to 50 upcoming reminders.
         lines = []
         for r in reminders:
             rid = r.get("reminder_id", str(r.get("_id"))[:6])
-            when = f"<t:{int(r['remind_at'].timestamp())}:R>"
+            remind_at = r["remind_at"]
+            if isinstance(remind_at, datetime) and remind_at.tzinfo is None:
+                remind_at = remind_at.replace(tzinfo=timezone.utc)
+            timestamp = f"<t:{int(remind_at.timestamp())}:R>"
             where = "DM" if r.get("dm") else "Channel"
-            line = f"`{rid}` - {when} ({where})"
+            line = f"`{rid}` - {timestamp} ({where})"
             if r.get("message"):
                 line += f": {r['message']}"
             lines.append(line)
@@ -159,7 +162,7 @@ Example: ?reminder cancel a1b2c3
 
     @tasks.loop(seconds=60)
     async def check_reminders(self):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         reminders = await self.collection.find({"remind_at": {"$lte": now}}).to_list(length=100)
 
         for r in reminders:
