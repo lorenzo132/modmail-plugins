@@ -1,16 +1,19 @@
 import discord
 from discord.ext import commands, tasks
-from discord.utils import escape_markdown, escape_mentions
-from datetime import datetime, timedelta, timezone
+from discord.utils import escape_markdown
+from datetime import datetime, timedelta
+from bson import ObjectId
 import re
 from typing import Optional
-from bson import ObjectId
+import asyncio
+import random
+import string
 
 class Remind(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.collection = self.bot.db["reminders"]
-        self.in_memory_reminders = []
+        self.short_term_reminders = []
         self.check_reminders.start()
 
     def cog_unload(self):
@@ -20,6 +23,7 @@ class Remind(commands.Cog):
         match = re.fullmatch(r"(\d+)(s|m|h|d|w|mo|y)", time_str.strip().lower())
         if not match:
             return None
+
         num, unit = match.groups()
         num = int(num)
         match unit:
@@ -31,9 +35,10 @@ class Remind(commands.Cog):
             case "mo": return timedelta(days=30 * num)
             case "y": return timedelta(days=365 * num)
 
-    @commands.command()
-    async def remind(self, ctx, time: str, *, message: str = ""):
-        """
+    def generate_reminder_id(self) -> str:
+        return ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+
+    @commands.command(help="""
         Set a reminder.
 
         Time units:
@@ -47,58 +52,59 @@ class Remind(commands.Cog):
 
         Flags:
           --dm → Sends the reminder in DMs instead of the channel.
-        """
+
+        Example: !remind 1h Take a break --dm
+    """)
+    async def remind(self, ctx, time: str, *, message: str = ""):
         delta = self.parse_timedelta(time)
         if not delta:
-            return await ctx.send("❌ Invalid time. Use: `s`, `m`, `h`, `d`, `w`, `mo`, `y`.")
+            return await ctx.send("❌ Invalid time. Use `s`, `m`, `h`, `d`, `w`, `mo`, `y`.")
 
-        dm = "--dm" in message
-        message = message.replace("--dm", "").strip()
-        reminder_time = datetime.now(timezone.utc) + delta
+        dm = False
+        if "--dm" in message:
+            dm = True
+            message = message.replace("--dm", "").strip()
 
-        reminder_data = {
-            "user_id": ctx.author.id,
-            "channel_id": ctx.channel.id,
-            "message": message + f"\n[Jump to message]({ctx.message.jump_url})",
-            "remind_at": reminder_time,
-            "dm": dm
-        }
+        remind_time = datetime.utcnow() + delta
+        reminder_id = self.generate_reminder_id()
+        message_link = ctx.message.jump_url
+        content = f"{message}\n{message_link}" if message else message_link
 
         if delta.total_seconds() < 60:
-            reminder_data["id"] = str(ObjectId())
-            self.in_memory_reminders.append(reminder_data)
-            reminder_id = reminder_data["id"][:6]
+            self.short_term_reminders.append((remind_time, ctx.author.id, ctx.channel.id, content, dm))
         else:
-            result = await self.collection.insert_one(reminder_data)
-            reminder_id = str(result.inserted_id)[:6]
+            await self.collection.insert_one({
+                "_id": reminder_id,
+                "user_id": ctx.author.id,
+                "channel_id": ctx.channel.id,
+                "message": content,
+                "remind_at": remind_time,
+                "dm": dm,
+            })
 
+        formatted_time = f"<t:{int(remind_time.replace(tzinfo=None).timestamp())}:R>"
         location = "via DM" if dm else "in this channel"
-        await ctx.send(
-            f"✅ Reminder `{reminder_id}` set {location} for <t:{int(reminder_time.timestamp())}:R>."
-        )
+        await ctx.send(f"✅ Reminder `{reminder_id}` set {location} for {formatted_time}.")
 
-    @commands.group(invoke_without_command=True, aliases=["reminders"])
-    async def reminder(self, ctx):
-        """
+    @commands.group(invoke_without_command=True, aliases=["reminders"], help="""
         List your active reminders.
-        """
-        db_cursor = self.collection.find({"user_id": ctx.author.id}).sort("remind_at", 1)
-        db_reminders = await db_cursor.to_list(length=50)
-        mem_reminders = [r for r in self.in_memory_reminders if r["user_id"] == ctx.author.id]
-        all_reminders = db_reminders + mem_reminders
+        Shows up to 50 reminders sorted by soonest.
+    """)
+    async def reminder(self, ctx):
+        cursor = self.collection.find({"user_id": ctx.author.id}).sort("remind_at", 1)
+        reminders = await cursor.to_list(length=50)
 
-        if not all_reminders:
+        if not reminders:
             return await ctx.send("📭 You have no active reminders.")
 
         lines = []
-        for r in all_reminders:
-            rid = r.get("id", str(r["_id"]))[:6]
-            timestamp = int(r["remind_at"].timestamp())
+        for r in reminders:
+            rid = r.get("_id", "")
+            when = f"<t:{int(r['remind_at'].replace(tzinfo=None).timestamp())}:R>"
             where = "DM" if r.get("dm") else "Channel"
-            msg = f"`{rid}` - <t:{timestamp}:R> ({where})"
+            msg = f"`{rid}` - {when} ({where})"
             if r.get("message"):
-                clean_msg = escape_mentions(escape_markdown(r["message"]))
-                msg += f": {clean_msg}"
+                msg += f": {escape_markdown(r['message'])}"
             lines.append(msg)
 
         embed = discord.Embed(
@@ -108,65 +114,72 @@ class Remind(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    @reminder.command(name="cancel")
-    async def cancel_reminder(self, ctx, reminder_id: str):
-        """
+    @reminder.command(name="cancel", help="""
         Cancel a reminder by its ID.
-        """
-        # Try in-memory first
-        for r in self.in_memory_reminders:
-            if r["id"].startswith(reminder_id) and r["user_id"] == ctx.author.id:
-                self.in_memory_reminders.remove(r)
-                return await ctx.send(f"🗑️ Reminder `{reminder_id}` cancelled.")
+        You can get the ID by running `!reminders`.
+    """)
+    async def cancel_reminder(self, ctx, reminder_id: str):
+        query = {"_id": reminder_id, "user_id": ctx.author.id}
+        result = await self.collection.delete_one(query)
+        if result.deleted_count == 1:
+            return await ctx.send(f"🗑️ Reminder `{reminder_id}` cancelled.")
 
-        # Then DB
-        query = {"user_id": ctx.author.id}
-        reminders = await self.collection.find(query).to_list(length=50)
-        for r in reminders:
-            if str(r["_id"]).startswith(reminder_id):
-                await self.collection.delete_one({"_id": r["_id"]})
-                return await ctx.send(f"🗑️ Reminder `{reminder_id}` cancelled.")
+        await ctx.send("❌ Reminder not found or not yours to delete.")
 
-        await ctx.send("❌ Reminder not found or not yours.")
-
-    @tasks.loop(seconds=5)
+    @tasks.loop(seconds=10)
     async def check_reminders(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
 
-        # In-memory
-        due = [r for r in self.in_memory_reminders if r["remind_at"] <= now]
-        for reminder in due:
-            await self.dispatch_reminder(reminder)
-            self.in_memory_reminders.remove(reminder)
+        # Check short term reminders
+        to_send = [r for r in self.short_term_reminders if r[0] <= now]
+        self.short_term_reminders = [r for r in self.short_term_reminders if r[0] > now]
 
-        # DB
-        db_reminders = await self.collection.find({"remind_at": {"$lte": now}}).to_list(length=100)
-        for reminder in db_reminders:
-            await self.dispatch_reminder(reminder)
-            await self.collection.delete_one({"_id": reminder["_id"]})
+        for remind_time, user_id, channel_id, content, dm in to_send:
+            user = self.bot.get_user(user_id)
+            if not user:
+                continue
 
-    async def dispatch_reminder(self, reminder):
-        user = self.bot.get_user(reminder["user_id"])
-        if not user:
-            return
+            content_final = f"⏰ **Reminder**: {escape_markdown(content)}"
 
-        content = "⏰ **Reminder**"
-        if reminder.get("message"):
-            clean_msg = escape_mentions(escape_markdown(reminder["message"]))
-            content += f": {clean_msg}"
-
-        if reminder.get("dm"):
-            try:
-                await user.send(content)
-            except discord.Forbidden:
-                pass
-        else:
-            channel = self.bot.get_channel(reminder["channel_id"])
-            if channel:
+            if dm:
                 try:
-                    await channel.send(f"{user.mention} {content}", allowed_mentions=discord.AllowedMentions.none())
+                    await user.send(content_final)
                 except discord.Forbidden:
                     pass
+            else:
+                channel = self.bot.get_channel(channel_id)
+                if channel:
+                    try:
+                        await channel.send(f"{user.mention} {content_final}")
+                    except discord.Forbidden:
+                        pass
+
+        # Check database reminders
+        reminders = await self.collection.find({"remind_at": {"$lte": now}}).to_list(length=100)
+
+        for reminder in reminders:
+            user = self.bot.get_user(reminder["user_id"])
+            if not user:
+                continue
+
+            content = "⏰ **Reminder**"
+            if reminder.get("message"):
+                content += f": {escape_markdown(reminder['message'])}"
+
+            if reminder.get("dm"):
+                try:
+                    await user.send(content)
+                except discord.Forbidden:
+                    pass
+            else:
+                channel = self.bot.get_channel(reminder["channel_id"])
+                if channel:
+                    try:
+                        await channel.send(f"{user.mention} {content}")
+                    except discord.Forbidden:
+                        pass
+
+            await self.collection.delete_one({"_id": reminder["_id"]})
 
     @check_reminders.before_loop
     async def before_reminder_loop(self):
