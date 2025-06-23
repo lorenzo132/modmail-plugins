@@ -781,13 +781,13 @@ class AdvancedMenu(commands.Cog):
             overwrites[guild.default_role] = discord.PermissionOverwrite(read_messages=False)
             # Allow the bot
             overwrites[guild.me] = discord.PermissionOverwrite(read_messages=True)
-            # Allow all roles with Modmail SUPPORTER+ permission
-            for role in guild.roles:
-                # Create a dummy context for permission check
-                dummy_ctx = type('Dummy', (), {'guild': guild, 'author': role, 'channel': thread.channel})()
-                # Check if this role would have SUPPORTER+ perms
-                if await self.bot.has_permissions(dummy_ctx, PermissionLevel.SUPPORTER):
-                    overwrites[role] = discord.PermissionOverwrite(read_messages=True)
+            # Collect all roles that should have access
+            allowed_roles = set()
+            for member in guild.members:
+                if await self.bot.has_permissions(member, PermissionLevel.SUPPORTER):
+                    allowed_roles.update(member.roles)
+            for role in allowed_roles:
+                overwrites[role] = discord.PermissionOverwrite(read_messages=True)
             await thread.channel.edit(overwrites=overwrites)
 
     async def on_menu_cancel_or_timeout(self, user_id):
