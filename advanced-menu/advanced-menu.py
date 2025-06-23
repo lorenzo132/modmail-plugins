@@ -116,11 +116,11 @@ class AdvancedMenu(commands.Cog):
     @commands.Cog.listener()
     async def on_thread_ready(self, thread, creator, category, initial_message):
         if self.config["enabled"] and self.config["options"] != {}:
-            # Remove staff permissions from the thread channel
+            # Remove read access from ALL roles
             overwrites = thread.channel.overwrites.copy()
-            staff_roles = [role for role in thread.channel.guild.roles if role.permissions.administrator or role.name.lower() in ["mod", "staff"]]
+            all_roles = thread.channel.guild.roles
             old_overwrites = {}
-            for role in staff_roles:
+            for role in all_roles:
                 if role in overwrites:
                     old_overwrites[role] = overwrites[role]
                 overwrites[role] = discord.PermissionOverwrite(read_messages=False)
@@ -765,18 +765,29 @@ class AdvancedMenu(commands.Cog):
             user = messages[0].author if messages else None
             if user:
                 await user.send("Sorry, an error occurred: thread creation method not implemented.")
-        # Restore staff permissions if thread is pending
-        # Find the thread for this user
+        # Set permissions so only Modmail staff (SUPPORTER+) and the bot can see the thread
         thread = None
-        for t, (th, old_overwrites) in self.pending_threads.items():
+        for t, (th, _) in self.pending_threads.items():
             if th.recipient and th.recipient.id == user_id:
                 thread = th
                 break
         if thread and thread.id in self.pending_threads:
-            th, _ = self.pending_threads.pop(thread.id)
+            self.pending_threads.pop(thread.id)
+            guild = thread.channel.guild
             overwrites = thread.channel.overwrites.copy()
-            for role, perms in old_overwrites.items():
-                overwrites[role] = perms
+            # Deny everyone by default
+            for role in guild.roles:
+                overwrites[role] = discord.PermissionOverwrite(read_messages=False)
+            overwrites[guild.default_role] = discord.PermissionOverwrite(read_messages=False)
+            # Allow the bot
+            overwrites[guild.me] = discord.PermissionOverwrite(read_messages=True)
+            # Allow all roles with Modmail SUPPORTER+ permission
+            for role in guild.roles:
+                # Create a dummy context for permission check
+                dummy_ctx = type('Dummy', (), {'guild': guild, 'author': role, 'channel': thread.channel})()
+                # Check if this role would have SUPPORTER+ perms
+                if await self.bot.has_permissions(dummy_ctx, PermissionLevel.SUPPORTER):
+                    overwrites[role] = discord.PermissionOverwrite(read_messages=True)
             await thread.channel.edit(overwrites=overwrites)
 
     async def on_menu_cancel_or_timeout(self, user_id):
