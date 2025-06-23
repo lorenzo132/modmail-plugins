@@ -86,6 +86,8 @@ class AdvancedMenu(commands.Cog):
         self.db = self.bot.plugin_db.get_partition(self)
         self.config = None
         self.default_config = {"enabled": False, "options": {}, "submenus": {}, "timeout": 20, "close_on_timeout": False, "anonymous_menu": False, "embed_text": "Please select an option.", "dropdown_placeholder": "Select an option to contact the staff team."}
+        self.pre_thread_buffers = {}  # {user_id: [messages]}
+        self.pre_thread_views = {}    # {user_id: view}
 
     async def cog_load(self):
         self.config = await self.db.find_one({"_id": "advanced-menu"})
@@ -696,6 +698,87 @@ class AdvancedMenu(commands.Cog):
         self.config = data
         await self.update_config()
         await ctx.send("Successfully loaded config")
+
+    async def handle_pre_thread_message(self, message):
+        """Intercepts DMs before thread creation, shows menu, and buffers messages."""
+        user_id = message.author.id
+        if user_id not in self.pre_thread_buffers:
+            self.pre_thread_buffers[user_id] = []
+            # Show the menu to the user
+            await self.show_menu(message)
+        self.pre_thread_buffers[user_id].append(message)
+
+    async def show_menu(self, message):
+        """Send the advanced menu to the user as a DM."""
+        view = PreThreadDropdownView(self.bot, self, message.author.id, self.config, self.config["options"], True)
+        await message.author.send(
+            self.config.get("embed_text", "Please select an option."),
+            view=view
+        )
+        self.pre_thread_views[message.author.id] = view
+
+    async def on_menu_selection(self, user_id, selected_option):
+        """Called when the user selects a menu option."""
+        # Get buffered messages
+        messages = self.pre_thread_buffers.pop(user_id, [])
+        self.pre_thread_views.pop(user_id, None)
+        # Call main bot to create thread and forward messages
+        # The main bot must implement this method
+        if hasattr(self.bot, "create_thread_with_buffered_messages"):
+            await self.bot.create_thread_with_buffered_messages(user_id, messages, selected_option)
+        else:
+            # Fallback: notify user
+            user = messages[0].author if messages else None
+            if user:
+                await user.send("Sorry, an error occurred: thread creation method not implemented.")
+
+# Add a new View for pre-thread menu selection
+class PreThreadDropdown(discord.ui.Select):
+    def __init__(self, bot, plugin, user_id, config: dict, data: dict, is_home: bool):
+        self.bot = bot
+        self.plugin = plugin
+        self.user_id = user_id
+        self.config = config
+        self.data = data
+        self.is_home = is_home
+        options = [
+            discord.SelectOption(label=line["label"], description=line["description"], emoji=line["emoji"]) for line in data.values()
+        ]
+        if not is_home:
+            options.append(discord.SelectOption(label="Main menu", description="Go back to the main menu", emoji="🏠"))
+        super().__init__(placeholder=self.config["dropdown_placeholder"], min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+            await self.view.done()
+            if self.values[0] == "Main menu":
+                await interaction.message.edit(view=PreThreadDropdownView(self.bot, self.plugin, self.user_id, self.config, self.config["options"], True))
+            elif self.data[self.values[0].lower().replace(" ", "_")]["type"] == "command":
+                # Notify plugin of selection
+                await self.plugin.on_menu_selection(self.user_id, self.data[self.values[0].lower().replace(" ", "_")]["callback"])
+            else:
+                await interaction.message.edit(view=PreThreadDropdownView(self.bot, self.plugin, self.user_id, self.config, self.config["submenus"][self.data[self.values[0].lower().replace(" ", "_")]["callback"]], False))
+        except Exception as e:
+            print(traceback.format_exc())
+
+class PreThreadDropdownView(discord.ui.View):
+    def __init__(self, bot, plugin, user_id, config: dict, options: dict, is_home: bool):
+        self.bot = bot
+        self.plugin = plugin
+        self.user_id = user_id
+        self.config = config
+        super().__init__(timeout=self.config["timeout"])
+        self.add_item(PreThreadDropdown(bot, plugin, user_id, config, options, is_home))
+
+    async def on_timeout(self):
+        # Optionally notify user of timeout
+        pass
+
+    async def done(self):
+        self.stop()
+        # Optionally clear the view
+        # await self.msg.edit(view=None)
 
 async def setup(bot):
     await bot.add_cog(AdvancedMenu(bot))
