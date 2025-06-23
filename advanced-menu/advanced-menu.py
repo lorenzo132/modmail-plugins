@@ -88,6 +88,7 @@ class AdvancedMenu(commands.Cog):
         self.default_config = {"enabled": False, "options": {}, "submenus": {}, "timeout": 20, "close_on_timeout": False, "anonymous_menu": False, "embed_text": "Please select an option.", "dropdown_placeholder": "Select an option to contact the staff team."}
         self.pre_thread_buffers = {}  # {user_id: [messages]}
         self.pre_thread_views = {}    # {user_id: view}
+        self.pending_threads = {}     # {thread_id: (thread, old_overwrites)}
 
     async def cog_load(self):
         self.config = await self.db.find_one({"_id": "advanced-menu"})
@@ -115,24 +116,31 @@ class AdvancedMenu(commands.Cog):
     @commands.Cog.listener()
     async def on_thread_ready(self, thread, creator, category, initial_message):
         if self.config["enabled"] and self.config["options"] != {}:
+            # Remove staff permissions from the thread channel
+            overwrites = thread.channel.overwrites.copy()
+            staff_roles = [role for role in thread.channel.guild.roles if role.permissions.administrator or role.name.lower() in ["mod", "staff"]]
+            old_overwrites = {}
+            for role in staff_roles:
+                if role in overwrites:
+                    old_overwrites[role] = overwrites[role]
+                overwrites[role] = discord.PermissionOverwrite(read_messages=False)
+            await thread.channel.edit(overwrites=overwrites)
+            self.pending_threads[thread.id] = (thread, old_overwrites)
+
+            # Show menu to user and buffer messages
             dummyMessage = DummyMessage(copy(initial_message))
             dummyMessage.author = self.bot.modmail_guild.me
             dummyMessage.content = self.config["embed_text"]
-
-            # clear message of residual attributes from the copy
             dummyMessage.attachments = []
             dummyMessage.components = []
             dummyMessage.embeds = []
             dummyMessage.stickers = []
-
             msgs, _ = await thread.reply(dummyMessage, self.config["anonymous_menu"])
             main_recipient_msg = None
-
             for m in msgs:
                 if m.channel.recipient == thread.recipient:
                     main_recipient_msg = m
                     break
-
             await main_recipient_msg.edit(view=DropdownView(self.bot, main_recipient_msg, thread, self.config, self.config["options"], True))
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -701,21 +709,47 @@ class AdvancedMenu(commands.Cog):
 
     async def handle_pre_thread_message(self, message):
         """Intercepts DMs before thread creation, shows menu, and buffers messages."""
-        user_id = message.author.id
-        if user_id not in self.pre_thread_buffers:
-            self.pre_thread_buffers[user_id] = []
-            # Show the menu to the user
-            await self.show_menu(message)
-        self.pre_thread_buffers[user_id].append(message)
+        # If a thread already exists and is pending, buffer the message
+        thread = await self.bot.thread_manager.find(recipient=message.author)
+        if thread and thread.id in self.pending_threads:
+            self.pre_thread_buffers[message.author.id].append(message)
+        else:
+            user_id = message.author.id
+            if user_id not in self.pre_thread_buffers:
+                self.pre_thread_buffers[user_id] = []
+                await self.show_menu(message)
+            self.pre_thread_buffers[user_id].append(message)
 
     async def show_menu(self, message):
         """Send the advanced menu to the user as a DM."""
-        view = PreThreadDropdownView(self.bot, self, message.author.id, self.config, self.config["options"], True)
-        await message.author.send(
-            self.config.get("embed_text", "Please select an option."),
-            view=view
-        )
-        self.pre_thread_views[message.author.id] = view
+        # Optionally DM the user or use the thread if it exists
+        thread = await self.bot.thread_manager.find(recipient=message.author)
+        if thread and thread.id in self.pending_threads:
+            # Use the thread channel to show the menu
+            dummyMessage = DummyMessage(copy(message))
+            dummyMessage.author = self.bot.modmail_guild.me
+            dummyMessage.content = self.config.get("embed_text", "Please select an option.")
+            dummyMessage.attachments = []
+            dummyMessage.components = []
+            dummyMessage.embeds = []
+            dummyMessage.stickers = []
+            msgs, _ = await thread.reply(dummyMessage, self.config["anonymous_menu"])
+            main_recipient_msg = None
+            for m in msgs:
+                if m.channel.recipient == thread.recipient:
+                    main_recipient_msg = m
+                    break
+            view = DropdownView(self.bot, main_recipient_msg, thread, self.config, self.config["options"], True)
+            await main_recipient_msg.edit(view=view)
+            self.pre_thread_views[message.author.id] = view
+        else:
+            # Fallback to DM
+            view = PreThreadDropdownView(self.bot, self, message.author.id, self.config, self.config["options"], True)
+            await message.author.send(
+                self.config.get("embed_text", "Please select an option."),
+                view=view
+            )
+            self.pre_thread_views[message.author.id] = view
 
     async def on_menu_selection(self, user_id, selected_option):
         """Called when the user selects a menu option."""
@@ -731,6 +765,30 @@ class AdvancedMenu(commands.Cog):
             user = messages[0].author if messages else None
             if user:
                 await user.send("Sorry, an error occurred: thread creation method not implemented.")
+        # Restore staff permissions if thread is pending
+        # Find the thread for this user
+        thread = None
+        for t, (th, old_overwrites) in self.pending_threads.items():
+            if th.recipient and th.recipient.id == user_id:
+                thread = th
+                break
+        if thread and thread.id in self.pending_threads:
+            th, _ = self.pending_threads.pop(thread.id)
+            overwrites = thread.channel.overwrites.copy()
+            for role, perms in old_overwrites.items():
+                overwrites[role] = perms
+            await thread.channel.edit(overwrites=overwrites)
+
+    async def on_menu_cancel_or_timeout(self, user_id):
+        # If a thread exists and is pending, delete it
+        thread = None
+        for t, (th, old_overwrites) in self.pending_threads.items():
+            if th.recipient and th.recipient.id == user_id:
+                thread = th
+                break
+        if thread and thread.id in self.pending_threads:
+            th, _ = self.pending_threads.pop(thread.id)
+            await th.channel.delete(reason="User cancelled or timed out before menu selection.")
 
 # Add a new View for pre-thread menu selection
 class PreThreadDropdown(discord.ui.Select):
@@ -773,7 +831,7 @@ class PreThreadDropdownView(discord.ui.View):
 
     async def on_timeout(self):
         # Optionally notify user of timeout
-        pass
+        await self.plugin.on_menu_cancel_or_timeout(self.user_id)
 
     async def done(self):
         self.stop()
