@@ -1677,29 +1677,63 @@ class Audit(commands.Cog):
         await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.orange()))
 
     @commands.Cog.listener()
-    async def on_automod_action_execution(self, action):
-        # Only log if enabled for this guild
-        guild = action.guild
-        if not self.c('automod action', guild):
+    async def on_auto_moderation_action_execution(self, execution: discord.AutoModActionExecution):
+        # See: https://discordpy.readthedocs.io/en/stable/api.html#discord.on_auto_moderation_action_execution
+        if not self.c('automod action', execution.guild):
             return
         embed = discord.Embed()
         embed.colour = discord.Colour.orange()
         embed.timestamp = datetime.datetime.utcnow()
         embed.title = ':shield: AutoMod Action Executed'
-        embed.add_field(name='Action Type', value=str(action.action.type), inline=True)
-        if hasattr(action, 'user') and action.user:
-            embed.add_field(name='User', value=f'{action.user.mention} ({action.user.id})', inline=True)
-        if hasattr(action, 'rule_name'):
-            embed.add_field(name='Rule', value=str(action.rule_name), inline=True)
-        if hasattr(action, 'content') and action.content:
-            embed.add_field(name='Content', value=action.content[:1024], inline=False)
-        if hasattr(action, 'channel') and action.channel:
-            embed.add_field(name='Channel', value=action.channel.mention, inline=True)
-        if hasattr(action, 'matched_keyword') and action.matched_keyword:
-            embed.add_field(name='Matched Keyword', value=str(action.matched_keyword), inline=True)
-        if hasattr(action, 'matched_content') and action.matched_content:
-            embed.add_field(name='Matched Content', value=str(action.matched_content)[:1024], inline=False)
-        await self.send_webhook(guild, embed=embed)
+        # Action type
+        embed.add_field(name='Action Type', value=str(getattr(execution.action, 'type', 'Unknown')), inline=True)
+        # Rule ID and Trigger Type
+        embed.add_field(name='Rule ID', value=str(getattr(execution, 'rule_id', 'Unknown')), inline=True)
+        embed.add_field(name='Rule Trigger Type', value=str(getattr(execution, 'rule_trigger_type', 'Unknown')), inline=True)
+        # User
+        user = getattr(execution, 'user', None)
+        if user:
+            embed.add_field(name='User', value=f'{user.mention} ({user.id})', inline=True)
+        else:
+            user_id = getattr(execution, 'user_id', None)
+            if user_id:
+                embed.add_field(name='User ID', value=str(user_id), inline=True)
+        # Channel
+        channel = getattr(execution, 'channel', None)
+        if channel:
+            embed.add_field(name='Channel', value=channel.mention, inline=True)
+        else:
+            channel_id = getattr(execution, 'channel_id', None)
+            if channel_id:
+                embed.add_field(name='Channel ID', value=str(channel_id), inline=True)
+        # Message
+        message = getattr(execution, 'message', None)
+        if message:
+            embed.add_field(name='Message', value=f'[Jump to Message]({message.jump_url})', inline=False)
+        else:
+            message_id = getattr(execution, 'message_id', None)
+            if message_id:
+                embed.add_field(name='Message ID', value=str(message_id), inline=False)
+        # Alert Message
+        alert_message = getattr(execution, 'alert_message', None)
+        if alert_message:
+            embed.add_field(name='Alert Message', value=f'[Jump to Alert]({alert_message.jump_url})', inline=False)
+        else:
+            alert_message_id = getattr(execution, 'alert_message_id', None)
+            if alert_message_id:
+                embed.add_field(name='Alert Message ID', value=str(alert_message_id), inline=False)
+        # Content
+        content = getattr(execution, 'content', None)
+        if content:
+            embed.add_field(name='Content', value=content[:1024], inline=False)
+        # Matched Keyword/Content
+        matched_keyword = getattr(execution, 'matched_keyword', None)
+        if matched_keyword:
+            embed.add_field(name='Matched Keyword', value=str(matched_keyword), inline=True)
+        matched_content = getattr(execution, 'matched_content', None)
+        if matched_content:
+            embed.add_field(name='Matched Content', value=str(matched_content)[:1024], inline=False)
+        await self.send_webhook(execution.guild, embed=embed)
 
 
 async def setup(bot):
