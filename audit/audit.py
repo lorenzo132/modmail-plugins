@@ -1683,6 +1683,13 @@ class Audit(commands.Cog):
         desc += f"**Ignored categories:** {', '.join(str(cid) for cid in categories)}"
         await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.orange()))
 
+    @audit.command(name='setlogchannel')
+    @commands.has_guild_permissions(administrator=True)
+    async def setlogchannel(self, ctx, channel: discord.TextChannel):
+        """Set the channel where audit logs will be sent."""
+        self.store.update_guild(ctx.guild.id, {'log_channel_id': channel.id})
+        await ctx.send(embed=discord.Embed(description=f"Log channel set to {channel.mention} (ID: {channel.id})", colour=discord.Colour.green()))
+
 
 async def setup(bot):
     """Setup function for the Audit cog."""
