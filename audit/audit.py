@@ -218,7 +218,7 @@ class Audit(commands.Cog):
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     pass
             wh = await channel.create_webhook(name=self.whname,
-                                              avatar=await self.bot.user.avatar_url.read(),
+                                              avatar=await self.bot.user.display_avatar.read(),
                                               reason="Audit Webhook")
             self._webhooks[guild.id] = wh
             try:
@@ -341,9 +341,16 @@ class Audit(commands.Cog):
     @staticmethod
     def user_base_embed(user, url=None, user_update=False):
         # Use display_avatar for best compatibility in dpy 2.3.2
+        display_name = getattr(user, 'display_name', user.name)
+        # Handle discriminator deprecation
+        discriminator = getattr(user, 'discriminator', None)
+        if discriminator and discriminator != '0':
+            full_name = f'{user.name}#{discriminator}'
+        else:
+            full_name = user.name
         avatar_url = str(getattr(user, 'display_avatar', getattr(user, 'avatar', None)))
         embed = discord.Embed()
-        embed.set_author(name=f'{user.name}#{user.discriminator}', url=url, icon_url=avatar_url)
+        embed.set_author(name=full_name, url=url, icon_url=avatar_url)
         embed.timestamp = datetime.datetime.utcnow()
         if user_update:
             embed.set_footer(text=f"User ID: {user.id}")
