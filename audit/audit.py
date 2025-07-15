@@ -340,12 +340,14 @@ class Audit(commands.Cog):
 
     @staticmethod
     def user_base_embed(user, url=None, user_update=False):
+        # Use display_avatar for best compatibility in dpy 2.3.2
+        avatar_url = str(getattr(user, 'display_avatar', getattr(user, 'avatar', None)))
         embed = discord.Embed()
-        embed.set_author(name=f'{user.name}#{user.discriminator}', url=url, icon_url=str(user.avatar_url))
+        embed.set_author(name=f'{user.name}#{user.discriminator}', url=url, icon_url=avatar_url)
         embed.timestamp = datetime.datetime.utcnow()
         if user_update:
             embed.set_footer(text=f"User ID: {user.id}")
-            embed.set_thumbnail(url=str(user.avatar_url))
+            embed.set_thumbnail(url=avatar_url)
         return embed
 
     async def upload_img(self, id, type, url):
