@@ -111,6 +111,8 @@ class MongoAuditStore:
 
 
 class Audit(commands.Cog):
+    CACHE_REFRESH_SECONDS = 300  # 5 minutes
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.upload_url = f"https://api.cloudinary.com/v1_1/taku/image/upload"
@@ -121,44 +123,63 @@ class Audit(commands.Cog):
         self.acname = "modmail-audit"
         self._webhooks = {}
         self._webhook_locks = {}
-
         self.all = (
-            'mute',
-            'unmute',
-            'deaf',
-            'undeaf',
-            'message update',
-            'message delete',
-            'message purge',
-            'member nickname',
-            'member roles',
-            'user update',
-            'member join',
-            'member leave',
-            'member ban',
-            'member unban',
-            'role create',
-            'role update',
-            'role delete',
-            'server edited',
-            'server emoji',
-            'channel create',
-            'channel update',
-            'channel delete',
-            'invites',
-            'invite create',
-            'invite delete',
+            'mute', 'unmute', 'deaf', 'undeaf', 'message update', 'message delete', 'message purge',
+            'member nickname', 'member roles', 'user update', 'member join', 'member leave', 'member ban',
+            'member unban', 'role create', 'role update', 'role delete', 'server edited', 'server emoji',
+            'channel create', 'channel update', 'channel delete', 'invites', 'invite create', 'invite delete',
             'automod action'
         )
-
         self.session = aiohttp.ClientSession(loop=self.bot.loop)
         # Load MongoDB URI from environment (.env) with support for CONNECTION_URI or MONGO_URI
         MONGO_URI = os.getenv('CONNECTION_URI') or os.getenv('MONGO_URI') or 'mongodb://localhost:27017/'
         self.store = MongoAuditStore(MONGO_URI)
-
-        # At the top of the Audit class
+        # Caching
+        self._guild_config_cache = {}
+        self._cache_lock = asyncio.Lock()
+        self.bot.loop.create_task(self._periodic_cache_refresh())
         self.LOG_CATEGORY_NAME = "Audit logs"
         self.LOG_CHANNEL_NAME = "audit-log"
+
+    async def _periodic_cache_refresh(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            async with self._cache_lock:
+                for guild in self.bot.guilds:
+                    self._guild_config_cache[guild.id] = self.store.get_guild(guild.id)
+            await asyncio.sleep(self.CACHE_REFRESH_SECONDS)
+
+    def _get_guild_config(self, guild_id):
+        # Try cache first, fallback to DB if missing
+        if guild_id in self._guild_config_cache:
+            return self._guild_config_cache[guild_id]
+        doc = self.store.get_guild(guild_id)
+        self._guild_config_cache[guild_id] = doc
+        return doc
+
+    def get_enabled(self, guild_id):
+        doc = self._get_guild_config(guild_id)
+        return set(doc.get('enabled', []))
+
+    def set_enabled(self, guild_id, enabled):
+        self.store.update_guild(guild_id, {'enabled': list(enabled)})
+        self._guild_config_cache[guild_id] = self.store.get_guild(guild_id)
+
+    def get_ignored_channels(self, guild_id):
+        doc = self._get_guild_config(guild_id)
+        return set(doc.get('ignored_channel_ids', []))
+
+    def set_ignored_channels(self, guild_id, ids):
+        self.store.update_guild(guild_id, {'ignored_channel_ids': list(ids)})
+        self._guild_config_cache[guild_id] = self.store.get_guild(guild_id)
+
+    def get_ignored_categories(self, guild_id):
+        doc = self._get_guild_config(guild_id)
+        return set(doc.get('ignored_category_ids', []))
+
+    def set_ignored_categories(self, guild_id, ids):
+        self.store.update_guild(guild_id, {'ignored_category_ids': list(ids)})
+        self._guild_config_cache[guild_id] = self.store.get_guild(guild_id)
 
     async def send_webhook(self, guild, *args, **kwargs):
         async with self.webhook_lock(guild.id):
@@ -1629,28 +1650,6 @@ class Audit(commands.Cog):
         desc = f"**Ignored channels:** {', '.join(str(cid) for cid in channels)}\n"
         desc += f"**Ignored categories:** {', '.join(str(cid) for cid in categories)}"
         await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.orange()))
-
-    # Add these helper methods inside the Audit class
-    def get_enabled(self, guild_id):
-        doc = self.store.get_guild(guild_id)
-        return set(doc.get('enabled', []))
-
-    def set_enabled(self, guild_id, enabled):
-        self.store.update_guild(guild_id, {'enabled': list(enabled)})
-
-    def get_ignored_channels(self, guild_id):
-        doc = self.store.get_guild(guild_id)
-        return set(doc.get('ignored_channel_ids', []))
-
-    def set_ignored_channels(self, guild_id, ids):
-        self.store.update_guild(guild_id, {'ignored_channel_ids': list(ids)})
-
-    def get_ignored_categories(self, guild_id):
-        doc = self.store.get_guild(guild_id)
-        return set(doc.get('ignored_category_ids', []))
-
-    def set_ignored_categories(self, guild_id, ids):
-        self.store.update_guild(guild_id, {'ignored_category_ids': list(ids)})
 
     @commands.Cog.listener()
     async def on_automod_action_execution(self, action):
