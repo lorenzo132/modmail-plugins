@@ -50,6 +50,7 @@ import asyncio
 import aiohttp
 from aiohttp import ClientResponseError
 from dateutil.relativedelta import relativedelta
+from pymongo import MongoClient
 
 
 def human_timedelta(dt, *, source=None):
@@ -90,6 +91,25 @@ def human_timedelta(dt, *, source=None):
     return f"{output[0]}, {output[1]} and {output[2]}{suffix}"
 
 
+class MongoAuditStore:
+    def __init__(self, uri, db_name='modmail_audit', col_name='guild_configs'):
+        self.client = MongoClient(uri)
+        self.db = self.client[db_name]
+        self.col = self.db[col_name]
+
+    def get_guild(self, guild_id):
+        return self.col.find_one({'guild_id': guild_id}) or {}
+
+    def set_guild(self, guild_id, data):
+        self.col.update_one({'guild_id': guild_id}, {'$set': data}, upsert=True)
+
+    def update_guild(self, guild_id, update):
+        self.col.update_one({'guild_id': guild_id}, {'$set': update}, upsert=True)
+
+    def all_guilds(self):
+        return list(self.col.find())
+
+
 class Audit(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -127,24 +147,17 @@ class Audit(commands.Cog):
             'channel delete',
             'invites',
             'invite create',
-            'invite delete'
+            'invite delete',
+            'automod action'
         )
 
         self.session = aiohttp.ClientSession(loop=self.bot.loop)
-        self.store_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'store.pkl')
-        if os.path.exists(self.store_path):
-            with open(self.store_path, 'rb') as f:
-                try:
-                    self.enabled, self.ignored_channel_ids, self.ignored_category_ids = pickle.load(f)
-                except pickle.UnpicklingError:
-                    self.ignored_channel_ids = defaultdict(set)
-                    self.ignored_category_ids = defaultdict(set)
-                    self.enabled = defaultdict(set)
-        else:
-            self.ignored_channel_ids = defaultdict(set)
-            self.ignored_category_ids = defaultdict(set)
-            self.enabled = defaultdict(set)
-        self.save_pickle.start()
+        MONGO_URI = os.getenv('MONGO_URI', 'CONNECTION_URI')  # Placeholder, replace as needed
+        self.store = MongoAuditStore(MONGO_URI)
+
+        # At the top of the Audit class
+        self.LOG_CATEGORY_NAME = "Audit logs"
+        self.LOG_CHANNEL_NAME = "audit-log"
 
     async def send_webhook(self, guild, *args, **kwargs):
         async with self.webhook_lock(guild.id):
@@ -153,31 +166,39 @@ class Audit(commands.Cog):
                 try:
                     return await wh.send(*args, **kwargs)
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    print(f'Invalid webhook for {guild.name}')
-            wh = get(await guild.webhooks(), name=self.whname)
+                    pass
+            doc = self.store.get_guild(guild.id)
+            channel = None
+            if doc.get('log_channel_id'):
+                for cat in guild.categories:
+                    channel = discord.utils.get(cat.channels, id=doc['log_channel_id'])
+                    if channel:
+                        break
+            if not channel:
+                # fallback to name-based lookup for recovery
+                for cat in guild.categories:
+                    if cat.id == doc.get('log_category_id'):
+                        channel = discord.utils.get(cat.channels, name=self.LOG_CHANNEL_NAME)
+                        break
+            if not channel:
+                # fallback to any channel with the right name
+                channel = discord.utils.get(guild.text_channels, name=self.LOG_CHANNEL_NAME)
+            if not channel:
+                # fallback to any text channel
+                channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
+            if not channel:
+                raise RuntimeError("No suitable logging channel found.")
+            wh = get(await channel.webhooks(), name=self.whname)
             if wh is not None:
                 try:
+                    self._webhooks[guild.id] = wh
                     return await wh.send(*args, **kwargs)
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    print(f'Invalid webhook for {guild.name}')
-
-            channel = get(guild.channels, name=self.acname)
-            if not channel:
-                o = {r: discord.PermissionOverwrite(read_messages=True)
-                     for r in guild.roles if r.permissions.view_audit_log}
-                o.update(
-                    {
-                        guild.default_role: discord.PermissionOverwrite(read_messages=False,
-                                                                        manage_messages=False),
-                        guild.me: discord.PermissionOverwrite(read_messages=True)
-                    }
-                )
-                channel = await guild.create_text_channel(
-                    self.acname, overwrites=o, reason="Audit Channel"
-                )
+                    pass
             wh = await channel.create_webhook(name=self.whname,
                                               avatar=await self.bot.user.avatar_url.read(),
                                               reason="Audit Webhook")
+            self._webhooks[guild.id] = wh
             try:
                 return await wh.send(*args, **kwargs)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -199,7 +220,6 @@ class Audit(commands.Cog):
 
     def cog_unload(self):
         self._save_pickle()
-        self.save_pickle.cancel()
 
     @tasks.loop(minutes=15)
     async def save_pickle(self):
@@ -213,21 +233,28 @@ class Audit(commands.Cog):
     async def ignore(self, ctx, *, channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
         """Ignore a channel or category from audit logs."""
         if isinstance(channel, discord.CategoryChannel):
-            self.ignored_category_ids[ctx.guild.id].add(channel.id)
+            cats = self.get_ignored_categories(ctx.guild.id)
+            cats.add(channel.id)
+            self.set_ignored_categories(ctx.guild.id, cats)
         else:
-            self.ignored_channel_ids[ctx.guild.id].add(channel.id)
+            chans = self.get_ignored_channels(ctx.guild.id)
+            chans.add(channel.id)
+            self.set_ignored_channels(ctx.guild.id, chans)
         embed = discord.Embed(description="Ignored!", colour=discord.Colour.green())
         await ctx.send(embed=embed)
 
     @audit.command()
-    async def unignore(self, ctx, *,
-                       channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
+    async def unignore(self, ctx, *, channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
         """Unignore a channel or category from audit logs."""
         try:
             if isinstance(channel, discord.CategoryChannel):
-                self.ignored_category_ids[ctx.guild.id].remove(channel.id)
+                cats = self.get_ignored_categories(ctx.guild.id)
+                cats.remove(channel.id)
+                self.set_ignored_categories(ctx.guild.id, cats)
             else:
-                self.ignored_channel_ids[ctx.guild.id].remove(channel.id)
+                chans = self.get_ignored_channels(ctx.guild.id)
+                chans.remove(channel.id)
+                self.set_ignored_channels(ctx.guild.id, chans)
         except KeyError:
             embed = discord.Embed(description="Already not ignored!", colour=discord.Colour.red())
         else:
@@ -236,7 +263,8 @@ class Audit(commands.Cog):
 
     @audit.command()
     async def enable(self, ctx, *, audit_type: str.lower = None):
-        """Enable a specific audit type, use "all" to enable all."""
+        """Enable a specific audit type, use 'all' to enable all."""
+        enabled = self.get_enabled(ctx.guild.id)
         if audit_type is None:
             embed = discord.Embed(description="**List of all audit types:**\n\n" + '\n'.join(sorted(self.all)),
                                   colour=discord.Colour.green())
@@ -245,32 +273,35 @@ class Audit(commands.Cog):
         audit_type = audit_type.replace('_', ' ')
         if audit_type == 'all':
             embed = discord.Embed(description="Enabled all audits!", colour=discord.Colour.green())
-            self.enabled[ctx.guild.id] = set(self.all)
+            enabled = set(self.all)
         elif audit_type not in self.all:
             embed = discord.Embed(description="Invalid audit type!", colour=discord.Colour.red())
             embed.add_field(name="Valid audit types", value=', '.join(self.all))
-        elif audit_type in self.enabled:
+        elif audit_type in enabled:
             embed = discord.Embed(description="Already enabled!", colour=discord.Colour.red())
         else:
-            self.enabled[ctx.guild.id].add(audit_type)
+            enabled.add(audit_type)
             embed = discord.Embed(description="Enabled!", colour=discord.Colour.green())
+        self.set_enabled(ctx.guild.id, enabled)
         await ctx.send(embed=embed)
 
     @audit.command()
     async def disable(self, ctx, *, audit_type: str.lower):
-        """Disable a specific audit type, use "all" to disable all."""
+        """Disable a specific audit type, use 'all' to disable all."""
+        enabled = self.get_enabled(ctx.guild.id)
         audit_type = audit_type.replace('_', ' ')
         if audit_type == 'all':
             embed = discord.Embed(description="Disabled all audits!", colour=discord.Colour.green())
-            self.enabled[ctx.guild.id] = set()
+            enabled = set()
         elif audit_type not in self.all:
             embed = discord.Embed(description="Invalid audit type!", colour=discord.Colour.red())
             embed.add_field(name="Valid audit types", value=', '.join(self.all))
-        elif audit_type not in self.enabled:
+        elif audit_type not in enabled:
             embed = discord.Embed(description="Not enabled!", colour=discord.Colour.red())
         else:
-            self.enabled[ctx.guild.id].remove(audit_type)
+            enabled.remove(audit_type)
             embed = discord.Embed(description="Disabled!", colour=discord.Colour.green())
+        self.set_enabled(ctx.guild.id, enabled)
         await ctx.send(embed=embed)
 
     async def cog_command_error(self, ctx, error):
@@ -278,12 +309,12 @@ class Audit(commands.Cog):
 
     def c(self, type, guild, channel=None):
         if channel is not None:
-            if channel.id in self.ignored_channel_ids[guild.id]:
+            if channel.id in self.get_ignored_channels(guild.id):
                 return False
             if getattr(channel, 'category', None) is not None:
-                if channel.category.id in self.ignored_category_ids[guild.id]:
+                if channel.category.id in self.get_ignored_categories(guild.id):
                     return False
-        return type in self.enabled[guild.id]
+        return type in self.get_enabled(guild.id)
 
     @staticmethod
     def user_base_embed(user, url=discord.embeds.EmptyEmbed, user_update=False):
@@ -958,98 +989,454 @@ class Audit(commands.Cog):
         if channel.overwrites and not channel.permissions_synced:
             await self.on_guild_channel_perms_update(None, channel)
 
-    async def on_guild_channel_perms_update(self, before: typing.Optional[discord.abc.GuildChannel],
-                                            after: discord.abc.GuildChannel):
-        if before is None:
-            if after.permissions_synced:
-                return
-        elif before.permissions_synced and after.permissions_synced:
+    @commands.Cog.listener()
+    async def on_guild_channel_update(self, before, after):
+        if not self.c('channel update', after.guild, after):
             return
 
         embed = discord.Embed()
+        embed.colour = discord.Colour.gold()
         embed.timestamp = datetime.datetime.utcnow()
 
-        ft = f'Channel ID: {after.id}'
-        if isinstance(after, discord.TextChannel):
-            embed.description = f"**:crossed_swords: Channel permissions updated: {after.mention}**"
-        elif isinstance(after, discord.VoiceChannel):
-            embed.description = f"**:crossed_swords: Channel permissions updated: `{after.name}`**"
-        else:
-            embed.description = f"**:crossed_swords: Category permissions updated: `{after.name}`**"
-            ft = f'Category ID: {after.id}'
+        if before.name != after.name:
+            embed.add_field(name="Channel renamed", value=f"`{before.name}` -> `{after.name}`", inline=False)
 
-        before_overwrites = before.overwrites if before is not None else {}
-        for user_or_role in set(before_overwrites) | set(after.overwrites):
-            b_overwrites = before_overwrites.get(user_or_role)
-            a_overwrites = after.overwrites.get(user_or_role)
-
-            if b_overwrites == a_overwrites:
-                continue
-
-            e = embed.copy()
-
-            if isinstance(user_or_role, discord.Role):
-                if user_or_role.is_default():
-                    name = '@everyone'
-                    e.set_footer(text=ft)
+        if isinstance(before, discord.TextChannel):
+            embed.description = f"**:pencil: Text channel updated: {before.mention}**"
+            if before.topic != after.topic:
+                embed.add_field(name="Topic", value=f"{before.topic} -> {after.topic}", inline=False)
+            if before.slowmode_delay != after.slowmode_delay:
+                if before.slowmode_delay == 0:
+                    bsm = 'off'
+                elif before.slowmode_delay == 1:
+                    bsm = f"{before.slowmode_delay} second"
                 else:
-                    name = '@' + user_or_role.name
-                    e.set_footer(text=f'{ft} | Role ID: {user_or_role.id}')
+                    bsm = f"{before.slowmode_delay} seconds"
+                if after.slowmode_delay == 0:
+                    asm = 'off'
+                elif after.slowmode_delay == 1:
+                    asm = f"{after.slowmode_delay} second"
+                else:
+                    asm = f"{after.slowmode_delay} seconds"
+                embed.add_field(name="Slowmode delay", value=f"{bsm} -> {asm}", inline=False)
+            if before.is_nsfw() != after.is_nsfw():
+                embed.add_field(name="NSFW", value=f"{'Yes' if before.is_nsfw() else 'No'} -> {'Yes' if after.is_nsfw() else 'No'}", inline=False)
+            if before.is_news() != after.is_news():
+                embed.add_field(name="News", value=f"{'Yes' if before.is_news() else 'No'} -> {'Yes' if after.is_news() else 'No'}", inline=False)
+
+        elif isinstance(before, discord.VoiceChannel):
+            embed.description = f"**:pencil: Voice channel updated: `{before.name}`**"
+            if before.bitrate != after.bitrate:
+                embed.add_field(name="Bitrate", value=f"`{before.bitrate//1000} kbps` -> `{after.bitrate//1000} kbps`", inline=False)
+            if before.user_limit != after.user_limit:
+                embed.add_field(name="User limit", value=f"`{before.user_limit or 'unlimited'}` -> `{after.user_limit or 'unlimited'}`", inline=False)
+
+        if before.category != after.category:
+            embed.add_field(name="Category", value=f"`{before.category}` -> `{after.category}`", inline=False)
+
+        if isinstance(before, discord.CategoryChannel):
+            embed.description = f"**:pencil: Category updated: `{before.name}`**"
+            embed.set_footer(text=f'Category ID: {after.id}')
+            if before.is_nsfw() != after.is_nsfw():
+                embed.add_field(name="NSFW",
+                                value=f"{'Yes' if before.is_nsfw() else 'No'} -> {'Yes' if after.is_nsfw() else 'No'}",
+                                inline=False)
+        else:
+            embed.set_footer(text=f'Channel ID: {after.id}')
+
+        if len(embed.fields) > 0:
+            await self.send_webhook(after.guild, embed=embed)
+
+        await self.on_guild_channel_perms_update(before, after)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel):
+        if not self.c('channel delete', channel.guild, channel):
+            return
+
+        embed = discord.Embed()
+        embed.colour = discord.Colour.red()
+        embed.timestamp = datetime.datetime.utcnow()
+
+        embed.add_field(name="Name", value=channel.name)
+
+        if isinstance(channel, discord.TextChannel):
+            embed.description = f"**:wastebasket: Text channel deleted: `#{channel.name}`**"
+            if channel.topic:
+                embed.add_field(name="Topic", value=f"{channel.topic}")
+        elif isinstance(channel, discord.VoiceChannel):
+            embed.description = f"**:wastebasket: Voice channel deleted: `{channel.name}`**"
+
+        if isinstance(channel, discord.CategoryChannel):
+            embed.description = f"**:wastebasket: Category deleted: `{channel.name}`**"
+            embed.set_footer(text=f'Category ID: {channel.id}')
+        else:
+            if channel.category:
+                embed.add_field(name="Category", value=f"`{channel.category.name}`")
+                embed.set_footer(text=f'Channel ID: {channel.id} | Category ID: {channel.category.id}')
             else:
-                name = f'@{user_or_role.name}#{user_or_role.discriminator}'
-                e.set_footer(text=f'{ft} | User ID: {user_or_role.id}')
+                embed.set_footer(text=f'Channel ID: {channel.id}')
 
-            allowed_perm = set()
-            denied_perm = set()
-            neutral_perm = set()
+        await self.send_webhook(channel.guild, embed=embed)
 
-            if b_overwrites is None:
-                e.description += f'\nAdded permission overwrites for `{name}`'
-                e.colour = discord.Colour.green()
-                for p, v in a_overwrites:
-                    if v is True:
-                        allowed_perm.add(p)
-                    elif v is False:
-                        denied_perm.add(p)
+    @commands.Cog.listener()
+    async def on_invite_create(self, invite):
+        if invite.guild is None:
+            return
 
-            elif a_overwrites is None:
-                e.description += f'\nRemoved permission overwrites for `{name}`'
-                e.colour = discord.Colour.red()
-                for p, v in b_overwrites:
-                    if v is not None:
-                        neutral_perm.add(p)
+        if not self.c('invite create', invite.guild, invite.channel):
+            return
 
+        embed = self.user_base_embed(invite.inviter)
+        embed.colour = discord.Colour.green()
+        embed.timestamp = invite.created_at
+        embed.description = f"**:envelope_with_arrow: An invite has been created**"
+        embed.add_field(name="Code", value=f"[**{invite.code}**]({invite.url})")
+        if hasattr(invite.channel, 'mention'):
+            embed.add_field(name="Channel", value=f"{invite.channel.mention}")
+            embed.set_footer(text=f"Inviter ID: {invite.inviter.id} | Channel ID: {invite.channel.id}")
+        else:
+            embed.set_footer(text=f"Inviter ID: {invite.inviter.id}")
+        if invite.max_age == 0:
+            inv_text = 'Never'
+        else:
+            inv_text = human_timedelta(relativedelta(seconds=invite.max_age))
+        embed.add_field(name="Expires after", value=inv_text)
+        embed.add_field(name="Max uses", value="Unlimited" if invite.max_age == 0 else str(invite.max_age))
+        if invite.temporary:
+            embed.add_field(name="Temporary membership", value=f"`Yes`")
+
+        await self.send_webhook(invite.guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_invite_delete(self, invite):
+        if invite.guild is None:
+            return
+
+        if not self.c('invite delete', invite.guild, invite.channel):
+            return
+        if invite.inviter:
+            embed = self.user_base_embed(invite.inviter)
+            embed.set_footer(text=f"Inviter ID: {invite.inviter.id}")
+        else:
+            embed = discord.Embed()
+        embed.colour = discord.Colour.red()
+        embed.timestamp = datetime.datetime.utcnow()
+        embed.description = f"**:wastebasket: An invite has been deleted**"
+        embed.add_field(name="Code", value=f"[**{invite.code}**]({invite.url})")
+        await self.send_webhook(invite.guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_member_join(self, member):
+        if not self.c('member join', member.guild):
+            return
+        embed = self.user_base_embed(member, user_update=True)
+        embed.colour = discord.Colour.green()
+        embed.description = f"**:inbox_tray: {member.mention} joined the server**"
+        embed.add_field(name="Account creation", value=human_timedelta(member.created_at))
+        await self.send_webhook(member.guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_member_leave(self, member):
+        if not self.c('member leave', member.guild):
+            return
+        embed = self.user_base_embed(member, user_update=True)
+        embed.colour = discord.Colour.red()
+        embed.add_field(name="Joined server", value=human_timedelta(member.joined_at))
+        embed.description = f"**:outbox_tray: {member.mention} left the server**"
+        await self.send_webhook(member.guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_member_ban(self, guild, user):
+        if not self.c('member ban', guild):
+            return
+        embed = self.user_base_embed(user, user_update=True)
+        embed.colour = discord.Colour.red()
+        embed.description = f"**:man_police_officer: :lock: {user.mention} was banned**"
+        await self.send_webhook(guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_member_unban(self, guild, user):
+        if not self.c('member unban', guild):
+            return
+        embed = self.user_base_embed(user, user_update=True)
+        embed.colour = discord.Colour.green()
+        embed.description = f"**:man_police_officer: :unlock: {user.mention} was unbanned**"
+        await self.send_webhook(guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_role_create(self, role):
+        if not self.c('role create', role.guild):
+            return
+        embed = discord.Embed()
+        embed.description = f"**:crossed_swords: Role created: {role.name}**"
+        embed.colour = discord.Colour.green()
+        embed.timestamp = role.created_at
+        embed.set_footer(text=f"ID: {role.id}")
+        if role.permissions.value == 0b0:
+            embed.add_field(name='Permissions', value='No permissions granted.', inline=False)
+        elif role.permissions.value == 0b01111111111111111111111111111111:
+            embed.add_field(name='Permissions', value='All permissions granted.', inline=False)
+        else:
+            embed.add_field(name='Permissions', value=', '.join(
+                sorted(p.replace('_', ' ').replace('administrator', '**administrator**')
+                       for p, v in (role.permissions
+                                    if not role.permissions.administrator else discord.Permissions.all()) if v)
+            ), inline=False)
+        await self.send_webhook(role.guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_role_update(self, before, after):
+        if not self.c('role update', after.guild):
+            return
+        embed = discord.Embed()
+        if after.is_default():
+            embed.description = f"**:pencil: Role updated: @everyone**"
+        else:
+            embed.description = f"**:pencil: Role updated: {after.mention}**"
+            embed.set_footer(text=f"ID: {after.id}")
+
+        embed.colour = discord.Colour.gold()
+        embed.timestamp = datetime.datetime.utcnow()
+        if before.name != after.name:
+            embed.add_field(name="Name", value=f"`{before.name}` -> `{after.name}`", inline=False)
+        if before.colour != after.colour:
+            embed.add_field(name="Colour",
+                            value=f"[#{before.colour.value:0>6x}](https://www.color-hex.com/color/{before.colour.value:0>6x}) -> [#{after.colour.value:0>6x}](https://www.color-hex.com/color/{after.colour.value:0>6x})", inline=False)
+        if before.hoist != after.hoist:
+            embed.add_field(name="Hoisted", value=f"`{'Yes' if before.hoist else 'No'}` -> "
+                                                  f"`{'Yes' if after.hoist else 'No'}`", inline=False)
+        if before.mentionable != after.mentionable:
+            embed.add_field(name="Mentionable", value=f"`{'Yes' if before.mentionable else 'No'}` -> "
+                                                      f"`{'Yes' if after.mentionable else 'No'}`", inline=False)
+
+        added_perms = set()
+        removed_perms = set()
+        for p, v in before.permissions:
+            if not v and getattr(after.permissions, p):
+                added_perms.add(p)
+            elif v and not getattr(after.permissions, p):
+                removed_perms.add(p)
+
+        if added_perms:
+            embed.add_field(name='✓ Allowed permissions', value=', '.join(
+                sorted(p.replace('_', ' ').replace('administrator', '**administrator**') for p in added_perms)
+            ), inline=False)
+        if removed_perms:
+            embed.add_field(name='✘ Denied permissions', value=', '.join(
+                sorted(p.replace('_', ' ').replace('administrator', '**administrator**') for p in removed_perms)
+            ), inline=False)
+        if len(embed.fields) == 0:
+            return
+        await self.send_webhook(after.guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role):
+        if not self.c('role delete', role.guild):
+            return
+
+        embed = discord.Embed()
+        embed.description = f"**:wastebasket: Role deleted: {role.name}**"
+        embed.colour = discord.Colour.red()
+        embed.timestamp = datetime.datetime.utcnow()
+        embed.set_footer(text=f"ID: {role.id}")
+        embed.add_field(name="Colour", value=f"[#{role.colour.value:0>6x}](https://www.color-hex.com/color/{role.colour.value:0>6x})")
+        embed.add_field(name="Hoisted", value=f"`{'Yes' if role.hoist else 'No'}`")
+        embed.add_field(name="Mentionable", value=f"`{'Yes' if role.mentionable else 'No'}`")
+
+        if role.permissions.value == 0b0:
+            embed.add_field(name='Permissions', value='No permissions granted.', inline=False)
+        elif role.permissions.value == 0b01111111111111111111111111111111:
+            embed.add_field(name='Permissions', value='All permissions granted.', inline=False)
+        else:
+            embed.add_field(name='Permissions', value=', '.join(
+                sorted(p.replace('_', ' ').replace('administrator', '**administrator**')
+                       for p, v in role.permissions if v)
+            ), inline=False)
+
+        await self.send_webhook(role.guild, embed=embed)
+
+    def get_region_flag(self, name):
+        if isinstance(name, str):
+            return name
+        if name == discord.VoiceRegion.amsterdam:
+            return ':flag_nl: ' + str(name)
+        if name == discord.VoiceRegion.brazil:
+            return ':flag_br: ' + str(name)
+        if name == discord.VoiceRegion.dubai:
+            return ':flag_ae: ' + str(name)
+        if name in {discord.VoiceRegion.eu_central, discord.VoiceRegion.eu_west, discord.VoiceRegion.europe}:
+            return ':flag_eu: ' + str(name)
+        if name == discord.VoiceRegion.frankfurt:
+            return ':flag_de: ' + str(name)
+        if name == discord.VoiceRegion.hongkong:
+            return ':flag_hk: ' + str(name)
+        if name == discord.VoiceRegion.india:
+            return ':flag_in: ' + str(name)
+        if name == discord.VoiceRegion.japan:
+            return ':flag_jp: ' + str(name)
+        if name in {discord.VoiceRegion.london, discord.VoiceRegion.vip_amsterdam}:
+            return ':flag_gb: ' + str(name)
+        if name == discord.VoiceRegion.russia:
+            return ':flag_ru: ' + str(name)
+        if name == discord.VoiceRegion.singapore:
+            return ':flag_sg: ' + str(name)
+        if name == discord.VoiceRegion.southafrica:
+            return ':flag_za: ' + str(name)
+        if name == discord.VoiceRegion.sydney:
+            return ':flag_au: ' + str(name)
+        if name in {discord.VoiceRegion.us_central, discord.VoiceRegion.us_east, discord.VoiceRegion.us_south, discord.VoiceRegion.us_west, discord.VoiceRegion.vip_us_east, discord.VoiceRegion.vip_us_west}:
+            return ':flag_us: ' + str(name)
+
+    @commands.Cog.listener()
+    async def on_guild_update(self, before, after):
+        if not self.c('server edited', after):
+            return
+        embed = discord.Embed()
+        embed.description = f"**:pencil: Server information updated!**"
+        embed.colour = discord.Colour.gold()
+        embed.timestamp = datetime.datetime.utcnow()
+
+        if before.name != after.name:
+            embed.add_field(name="Name", value=f"{before.name} -> {after.name}", inline=False)
+        if before.afk_timeout != after.afk_timeout:
+            before_text_afk_timeout = str(before.afk_timeout/60) + ' minute' + 's' if before.afk_timeout//60 != 1 else ''
+            after_text_afk_timeout = str(after.afk_timeout/60) + ' minute' + 's' if after.afk_timeout//60 != 1 else ''
+            embed.add_field(name="Afk timeout", value=f"{before_text_afk_timeout} -> {after_text_afk_timeout}", inline=False)
+        if before.afk_channel != after.afk_channel:
+            embed.add_field(name="Afk channel", value=f"`{'#' if before.afk_channel else ''}{before.afk_channel}` -> `{'#' if after.afk_channel else ''}{after.afk_channel}`", inline=False)
+        if before.system_channel != after.system_channel:
+            embed.add_field(name="System messages channel", value=f"`{before.system_channel}` -> `{after.system_channel}`", inline=False)
+
+        if before.region != after.region:
+            embed.add_field(name="Region", value=f"{self.get_region_flag(before.region)} -> "
+                                                 f"{self.get_region_flag(after.region)}", inline=False)
+        if before.icon != after.icon:
+            if before.icon:
+                before_url = await self.upload_img(after.id, 'icon', before.icon_url)
+                if before_url:
+                    before_url = f'[[before]]({before_url})'
+                else:
+                    before_url = f'[[before]]({before.icon_url})'
             else:
-                e.description += f'\nEdited permission overwrites for `{name}`'
-                e.colour = discord.Colour.gold()
-                keys = {x[0] for x in a_overwrites}
-                b_overwrites = dict(b_overwrites)
-                a_overwrites = dict(a_overwrites)
-                modified_keys = {k for k in keys if b_overwrites.get(k) != a_overwrites.get(k)}
-                for p, v in {(k, v) for k, v in a_overwrites.items() if k in modified_keys}:
-                    if v is True:
-                        allowed_perm.add(p)
-                    elif v is False:
-                        denied_perm.add(p)
-                    elif v is None:
-                        neutral_perm.add(p)
+                before_url = "None"
+            if after.icon:
+                embed.set_thumbnail(url=after.icon_url)
+                after_url = f"[[after]]({after.icon_url})"
+            else:
+                after_url = "None"
+            embed.add_field(name="Icon", value=f"{before_url} -> {after_url}", inline=False)
 
-            if allowed_perm:
-                e.add_field(name='✓ Allowed permissions', value=', '.join(
-                    sorted(p.replace('_', ' ') for p in allowed_perm)
-                ), inline=False)
+        if before.banner != after.banner:
+            if before.banner:
+                before_url = await self.upload_img(after.id, 'banner', before.banner_url)
+                if before_url:
+                    before_url = f'[[before]]({before_url})'
+                else:
+                    before_url = f'[[before]]({before.banner_url})'
+            else:
+                before_url = "None"
+            if after.banner:
+                embed.set_image(url=after.banner_url)
+                after_url = f"[[after]]({after.banner_url})"
+            else:
+                after_url = "None"
+            embed.add_field(name="Banner", value=f"{before_url} -> {after_url}", inline=False)
 
-            if neutral_perm:
-                e.add_field(name='⧄ Neutral permissions', value=', '.join(
-                    sorted(p.replace('_', ' ') for p in neutral_perm)
-                ), inline=False)
+        if before.splash != after.splash:
+            if before.splash:
+                before_url = await self.upload_img(after.id, 'splash', before.splash_url)
+                if before_url:
+                    before_url = f'[[before]]({before_url})'
+                else:
+                    before_url = f'[[before]]({before.splash_url})'
+            else:
+                before_url = "None"
+            if after.banner:
+                embed.set_image(url=after.splash_url)
+                after_url = f"[[after]]({after.splash_url})"
+            else:
+                after_url = "None"
+            embed.add_field(name="Invite Splash", value=f"{before_url} -> {after_url}", inline=False)
 
-            if denied_perm:
-                e.add_field(name='✘ Denied permissions', value=', '.join(
-                    sorted(p.replace('_', ' ') for p in denied_perm)
-                ), inline=False)
+        if before.verification_level != after.verification_level:
+            embed.add_field(name="Verification level", value=f"{before.verification_level} -> {after.verification_level}", inline=False)
 
-            await self.send_webhook(after.guild, embed=e)
+        if before.explicit_content_filter != after.explicit_content_filter:
+            embed.add_field(name="Explicit content filter", value=f"{before.explicit_content_filter} -> {after.explicit_content_filter}", inline=False)
+
+        if before.mfa_level != after.mfa_level:
+            embed.add_field(name="Requires 2FA for admins", value=f"`{'Yes' if after.mfa_level else 'No'}`")
+        if len(embed.fields) == 0:
+            return
+
+        await self.send_webhook(after, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_emojis_update(self, guild, before, after):
+        if not self.c('server emoji', guild):
+            return
+
+        removed_emojis = set(before) - set(after)
+        added_emojis = set(after) - set(before)
+
+        embed = discord.Embed()
+        embed.description = f"**:pencil: Server's emojis updated!**"
+        embed.colour = discord.Colour.gold()
+        embed.timestamp = datetime.datetime.utcnow()
+
+        if added_emojis:
+            emoji_text = ''
+            for emoji in added_emojis:
+                if emoji.animated:
+                    emoji_text += f'<a:{emoji.name}:{emoji.id}> `:{emoji.name}:`\n'
+                else:
+                    emoji_text += f'<:{emoji.name}:{emoji.id}> `:{emoji.name}:`\n'
+            embed.add_field(name="Added emojis", value=emoji_text)
+        if removed_emojis:
+            emoji_text = ''
+            for emoji in removed_emojis:
+                url = await self.upload_img(emoji.id, 'emoji', emoji.url)
+                if url:
+                    emoji_text += f'[emoji]({url}) `:{emoji.name}:`\n'
+                else:
+                    emoji_text += f'`:{emoji.name}:`\n'
+            embed.add_field(name="Removed emojis", value=emoji_text)
+
+        if len(embed.fields) == 0:
+            return
+
+        await self.send_webhook(guild, embed=embed)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel):
+        if not self.c('channel create', channel.guild, channel):
+            return
+        embed = discord.Embed()
+        embed.colour = discord.Colour.green()
+        embed.timestamp = channel.created_at
+
+        if isinstance(channel, discord.TextChannel):
+            embed.description = f"**:pencil2: Text channel created: {channel.mention}**"
+            if channel.topic:
+                embed.add_field(name="Topic", value=f"{channel.topic}")
+        elif isinstance(channel, discord.VoiceChannel):
+            embed.description = f"**:pencil2: Voice channel created: `{channel.name}`**"
+
+        if isinstance(channel, discord.CategoryChannel):
+            embed.description = f"**:pencil2: Category created: `{channel.name}`**"
+            embed.set_footer(text=f'Category ID: {channel.id}')
+        else:
+            if channel.category:
+                embed.add_field(name="Category", value=f"`{channel.category.name}`")
+                embed.set_footer(text=f'Channel ID: {channel.id} | Category ID: {channel.category.id}')
+            else:
+                embed.set_footer(text=f'Channel ID: {channel.id}')
+
+        await self.send_webhook(channel.guild, embed=embed)
+
+        if channel.overwrites and not channel.permissions_synced:
+            await self.on_guild_channel_perms_update(None, channel)
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before, after):
@@ -1187,6 +1574,107 @@ class Audit(commands.Cog):
         embed.description = f"**:wastebasket: An invite has been deleted**"
         embed.add_field(name="Code", value=f"[**{invite.code}**]({invite.url})")
         await self.send_webhook(invite.guild, embed=embed)
+
+    @audit.command(name='setup_logging')
+    @commands.has_guild_permissions(administrator=True)
+    async def setup_logging(self, ctx):
+        """Setup the Audit logs category and logging channels."""
+        guild = ctx.guild
+        # Try to get by stored ID first
+        doc = self.store.get_guild(guild.id)
+        category = None
+        if doc.get('log_category_id'):
+            category = discord.utils.get(guild.categories, id=doc['log_category_id'])
+        if not category:
+            category = discord.utils.get(guild.categories, name=self.LOG_CATEGORY_NAME)
+        if not category:
+            category = await guild.create_category(self.LOG_CATEGORY_NAME, reason="Setup audit logging category")
+        channel = None
+        if doc.get('log_channel_id'):
+            channel = discord.utils.get(category.channels, id=doc['log_channel_id'])
+        if not channel:
+            channel = discord.utils.get(category.channels, name=self.LOG_CHANNEL_NAME)
+        if not channel:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                guild.me: discord.PermissionOverwrite(read_messages=True)
+            }
+            channel = await guild.create_text_channel(self.LOG_CHANNEL_NAME, category=category, overwrites=overwrites, reason="Setup audit logging channel")
+        # Save category and channel IDs in MongoDB
+        self.store.update_guild(guild.id, {'log_category_id': category.id, 'log_channel_id': channel.id})
+        await ctx.send(embed=discord.Embed(description=f"Setup complete! Category: {category.mention}, Channel: {channel.mention}", colour=discord.Colour.green()))
+
+    @audit.command(name='show_config')
+    async def show_config(self, ctx):
+        doc = self.store.get_guild(ctx.guild.id)
+        desc = f"**Enabled types:** {', '.join(doc.get('enabled', []))}\n"
+        desc += f"**Ignored channels:** {', '.join(str(cid) for cid in doc.get('ignored_channel_ids', []))}\n"
+        desc += f"**Ignored categories:** {', '.join(str(cid) for cid in doc.get('ignored_category_ids', []))}\n"
+        desc += f"**Log category ID:** {doc.get('log_category_id', 'Not set')}\n"
+        desc += f"**Log channel ID:** {doc.get('log_channel_id', 'Not set')}"
+        await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.blue()))
+
+    @audit.command(name='reset_config')
+    @commands.has_guild_permissions(administrator=True)
+    async def reset_config(self, ctx):
+        self.store.set_guild(ctx.guild.id, {'enabled': [], 'ignored_channel_ids': [], 'ignored_category_ids': []})
+        await ctx.send(embed=discord.Embed(description="Audit config reset!", colour=discord.Colour.red()))
+
+    @audit.command(name='list_ignored')
+    async def list_ignored(self, ctx):
+        doc = self.store.get_guild(ctx.guild.id)
+        channels = doc.get('ignored_channel_ids', [])
+        categories = doc.get('ignored_category_ids', [])
+        desc = f"**Ignored channels:** {', '.join(str(cid) for cid in channels)}\n"
+        desc += f"**Ignored categories:** {', '.join(str(cid) for cid in categories)}"
+        await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.orange()))
+
+    # Add these helper methods inside the Audit class
+    def get_enabled(self, guild_id):
+        doc = self.store.get_guild(guild_id)
+        return set(doc.get('enabled', []))
+
+    def set_enabled(self, guild_id, enabled):
+        self.store.update_guild(guild_id, {'enabled': list(enabled)})
+
+    def get_ignored_channels(self, guild_id):
+        doc = self.store.get_guild(guild_id)
+        return set(doc.get('ignored_channel_ids', []))
+
+    def set_ignored_channels(self, guild_id, ids):
+        self.store.update_guild(guild_id, {'ignored_channel_ids': list(ids)})
+
+    def get_ignored_categories(self, guild_id):
+        doc = self.store.get_guild(guild_id)
+        return set(doc.get('ignored_category_ids', []))
+
+    def set_ignored_categories(self, guild_id, ids):
+        self.store.update_guild(guild_id, {'ignored_category_ids': list(ids)})
+
+    @commands.Cog.listener()
+    async def on_automod_action_execution(self, action):
+        # Only log if enabled for this guild
+        guild = action.guild
+        if not self.c('automod action', guild):
+            return
+        embed = discord.Embed()
+        embed.colour = discord.Colour.orange()
+        embed.timestamp = datetime.datetime.utcnow()
+        embed.title = ':shield: AutoMod Action Executed'
+        embed.add_field(name='Action Type', value=str(action.action.type), inline=True)
+        if hasattr(action, 'user') and action.user:
+            embed.add_field(name='User', value=f'{action.user.mention} ({action.user.id})', inline=True)
+        if hasattr(action, 'rule_name'):
+            embed.add_field(name='Rule', value=str(action.rule_name), inline=True)
+        if hasattr(action, 'content') and action.content:
+            embed.add_field(name='Content', value=action.content[:1024], inline=False)
+        if hasattr(action, 'channel') and action.channel:
+            embed.add_field(name='Channel', value=action.channel.mention, inline=True)
+        if hasattr(action, 'matched_keyword') and action.matched_keyword:
+            embed.add_field(name='Matched Keyword', value=str(action.matched_keyword), inline=True)
+        if hasattr(action, 'matched_content') and action.matched_content:
+            embed.add_field(name='Matched Content', value=str(action.matched_content)[:1024], inline=False)
+        await self.send_webhook(guild, embed=embed)
 
 
 def setup(bot):
