@@ -152,7 +152,8 @@ class Audit(commands.Cog):
         )
 
         self.session = aiohttp.ClientSession(loop=self.bot.loop)
-        MONGO_URI = os.getenv('MONGO_URI', 'CONNECTION_URI')  # Placeholder, replace as needed
+        # Load MongoDB URI from environment (.env) with support for CONNECTION_URI or MONGO_URI
+        MONGO_URI = os.getenv('CONNECTION_URI') or os.getenv('MONGO_URI') or 'mongodb://localhost:27017/'
         self.store = MongoAuditStore(MONGO_URI)
 
         # At the top of the Audit class
