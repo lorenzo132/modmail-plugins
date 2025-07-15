@@ -1228,7 +1228,7 @@ class Audit(commands.Cog):
                 sorted(p.replace('_', ' ').replace('administrator', '**administrator**')
                        for p, v in (role.permissions
                                     if not role.permissions.administrator else discord.Permissions.all()) if v)
-            ), inline=False)
+                ), inline=False)
         await self.send_webhook(role.guild, embed=embed)
 
     @commands.Cog.listener()
@@ -1267,7 +1267,7 @@ class Audit(commands.Cog):
         if added_perms:
             embed.add_field(name='✓ Allowed permissions', value=', '.join(
                 sorted(p.replace('_', ' ').replace('administrator', '**administrator**') for p in added_perms)
-            ), inline=False)
+                ), inline=False)
         if removed_perms:
             embed.add_field(name='✘ Denied permissions', value=', '.join(
                 sorted(p.replace('_', ' ').replace('administrator', '**administrator**') for p in removed_perms)
@@ -1298,7 +1298,7 @@ class Audit(commands.Cog):
             embed.add_field(name='Permissions', value=', '.join(
                 sorted(p.replace('_', ' ').replace('administrator', '**administrator**')
                        for p, v in role.permissions if v)
-            ), inline=False)
+                ), inline=False)
 
         await self.send_webhook(role.guild, embed=embed)
 
@@ -1682,65 +1682,6 @@ class Audit(commands.Cog):
         desc = f"**Ignored channels:** {', '.join(str(cid) for cid in channels)}\n"
         desc += f"**Ignored categories:** {', '.join(str(cid) for cid in categories)}"
         await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.orange()))
-
-    @commands.Cog.listener()
-    async def on_automod_action_execution(self, execution: discord.AutomodActionExecution):
-        # See: https://discordpy.readthedocs.io/en/stable/api.html#discord.on_automod_action_execution
-        if not self.c('automod action', execution.guild):
-            return
-        embed = discord.Embed()
-        embed.colour = discord.Colour.orange()
-        embed.timestamp = datetime.datetime.utcnow()
-        embed.title = ':shield: AutoMod Action Executed'
-        # Action type
-        embed.add_field(name='Action Type', value=str(getattr(execution.action, 'type', 'Unknown')), inline=True)
-        # Rule ID and Trigger Type
-        embed.add_field(name='Rule ID', value=str(getattr(execution, 'rule_id', 'Unknown')), inline=True)
-        embed.add_field(name='Rule Trigger Type', value=str(getattr(execution, 'rule_trigger_type', 'Unknown')), inline=True)
-        # User
-        user = getattr(execution, 'user', None)
-        if user:
-            embed.add_field(name='User', value=f'{user.mention} ({user.id})', inline=True)
-        else:
-            user_id = getattr(execution, 'user_id', None)
-            if user_id:
-                embed.add_field(name='User ID', value=str(user_id), inline=True)
-        # Channel
-        channel = getattr(execution, 'channel', None)
-        if channel:
-            embed.add_field(name='Channel', value=channel.mention, inline=True)
-        else:
-            channel_id = getattr(execution, 'channel_id', None)
-            if channel_id:
-                embed.add_field(name='Channel ID', value=str(channel_id), inline=True)
-        # Message
-        message = getattr(execution, 'message', None)
-        if message:
-            embed.add_field(name='Message', value=f'[Jump to Message]({message.jump_url})', inline=False)
-        else:
-            message_id = getattr(execution, 'message_id', None)
-            if message_id:
-                embed.add_field(name='Message ID', value=str(message_id), inline=False)
-        # Alert Message
-        alert_message = getattr(execution, 'alert_message', None)
-        if alert_message:
-            embed.add_field(name='Alert Message', value=f'[Jump to Alert]({alert_message.jump_url})', inline=False)
-        else:
-            alert_message_id = getattr(execution, 'alert_message_id', None)
-            if alert_message_id:
-                embed.add_field(name='Alert Message ID', value=str(alert_message_id), inline=False)
-        # Content
-        content = getattr(execution, 'content', None)
-        if content:
-            embed.add_field(name='Content', value=content[:1024], inline=False)
-        # Matched Keyword/Content
-        matched_keyword = getattr(execution, 'matched_keyword', None)
-        if matched_keyword:
-            embed.add_field(name='Matched Keyword', value=str(matched_keyword), inline=True)
-        matched_content = getattr(execution, 'matched_content', None)
-        if matched_content:
-            embed.add_field(name='Matched Content', value=str(matched_content)[:1024], inline=False)
-        await self.send_webhook(execution.guild, embed=embed)
 
 
 async def setup(bot):
