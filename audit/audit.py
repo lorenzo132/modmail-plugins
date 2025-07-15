@@ -1677,5 +1677,5 @@ class Audit(commands.Cog):
         await self.send_webhook(guild, embed=embed)
 
 
-def setup(bot):
+async def setup(bot):
     bot.add_cog(Audit(bot))
