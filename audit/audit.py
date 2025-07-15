@@ -897,48 +897,54 @@ class Audit(commands.Cog):
 
         if before.icon != after.icon:
             if before.icon:
-                before_url = await self.upload_img(after.id, 'icon', before.icon.url if hasattr(before.icon, 'url') else before.icon)
+                icon_url = before.icon.url if hasattr(before.icon, "url") else before.icon
+                before_url = await self.upload_img(after.id, 'icon', icon_url)
                 if before_url:
                     before_url = f'[[before]]({before_url})'
                 else:
-                    before_url = f'[[before]]({before.icon.url if hasattr(before.icon, 'url') else before.icon})'
+                    before_url = f'[[before]]({icon_url})'
             else:
                 before_url = "None"
             if after.icon:
-                embed.set_thumbnail(url=after.icon.url if hasattr(after.icon, 'url') else after.icon)
-                after_url = f"[[after]]({after.icon.url if hasattr(after.icon, 'url') else after.icon})"
+                after_icon_url = after.icon.url if hasattr(after.icon, "url") else after.icon
+                embed.set_thumbnail(url=after_icon_url)
+                after_url = f"[[after]]({after_icon_url})"
             else:
                 after_url = "None"
             embed.add_field(name="Icon", value=f"{before_url} -> {after_url}", inline=False)
 
         if before.banner != after.banner:
             if before.banner:
-                before_url = await self.upload_img(after.id, 'banner', before.banner.url if hasattr(before.banner, 'url') else before.banner)
+                banner_url = before.banner.url if hasattr(before.banner, "url") else before.banner
+                before_url = await self.upload_img(after.id, 'banner', banner_url)
                 if before_url:
                     before_url = f'[[before]]({before_url})'
                 else:
-                    before_url = f'[[before]]({before.banner.url if hasattr(before.banner, 'url') else before.banner})'
+                    before_url = f'[[before]]({banner_url})'
             else:
                 before_url = "None"
             if after.banner:
-                embed.set_image(url=after.banner.url if hasattr(after.banner, 'url') else after.banner)
-                after_url = f"[[after]]({after.banner.url if hasattr(after.banner, 'url') else after.banner})"
+                after_banner_url = after.banner.url if hasattr(after.banner, "url") else after.banner
+                embed.set_image(url=after_banner_url)
+                after_url = f"[[after]]({after_banner_url})"
             else:
                 after_url = "None"
             embed.add_field(name="Banner", value=f"{before_url} -> {after_url}", inline=False)
 
         if before.splash != after.splash:
             if before.splash:
-                before_url = await self.upload_img(after.id, 'splash', before.splash.url if hasattr(before.splash, 'url') else before.splash)
+                splash_url = before.splash.url if hasattr(before.splash, "url") else before.splash
+                before_url = await self.upload_img(after.id, 'splash', splash_url)
                 if before_url:
                     before_url = f'[[before]]({before_url})'
                 else:
-                    before_url = f'[[before]]({before.splash.url if hasattr(before.splash, 'url') else before.splash})'
+                    before_url = f'[[before]]({splash_url})'
             else:
                 before_url = "None"
-            if after.banner:
-                embed.set_image(url=after.splash.url if hasattr(after.splash, 'url') else after.splash)
-                after_url = f"[[after]]({after.splash.url if hasattr(after.splash, 'url') else after.splash})"
+            if after.splash:
+                after_splash_url = after.splash.url if hasattr(after.splash, "url") else after.splash
+                embed.set_image(url=after_splash_url)
+                after_url = f"[[after]]({after_splash_url})"
             else:
                 after_url = "None"
             embed.add_field(name="Invite Splash", value=f"{before_url} -> {after_url}", inline=False)
@@ -1348,48 +1354,54 @@ class Audit(commands.Cog):
 
         if before.icon != after.icon:
             if before.icon:
-                before_url = await self.upload_img(after.id, 'icon', before.icon.url if hasattr(before.icon, 'url') else before.icon)
+                icon_url = before.icon.url if hasattr(before.icon, "url") else before.icon
+                before_url = await self.upload_img(after.id, 'icon', icon_url)
                 if before_url:
                     before_url = f'[[before]]({before_url})'
                 else:
-                    before_url = f'[[before]]({before.icon.url if hasattr(before.icon, 'url') else before.icon})'
+                    before_url = f'[[before]]({icon_url})'
             else:
                 before_url = "None"
             if after.icon:
-                embed.set_thumbnail(url=after.icon.url if hasattr(after.icon, 'url') else after.icon)
-                after_url = f"[[after]]({after.icon.url if hasattr(after.icon, 'url') else after.icon})"
+                after_icon_url = after.icon.url if hasattr(after.icon, "url") else after.icon
+                embed.set_thumbnail(url=after_icon_url)
+                after_url = f"[[after]]({after_icon_url})"
             else:
                 after_url = "None"
             embed.add_field(name="Icon", value=f"{before_url} -> {after_url}", inline=False)
 
         if before.banner != after.banner:
             if before.banner:
-                before_url = await self.upload_img(after.id, 'banner', before.banner.url if hasattr(before.banner, 'url') else before.banner)
+                banner_url = before.banner.url if hasattr(before.banner, "url") else before.banner
+                before_url = await self.upload_img(after.id, 'banner', banner_url)
                 if before_url:
                     before_url = f'[[before]]({before_url})'
                 else:
-                    before_url = f'[[before]]({before.banner.url if hasattr(before.banner, 'url') else before.banner})'
+                    before_url = f'[[before]]({banner_url})'
             else:
                 before_url = "None"
             if after.banner:
-                embed.set_image(url=after.banner.url if hasattr(after.banner, 'url') else after.banner)
-                after_url = f"[[after]]({after.banner.url if hasattr(after.banner, 'url') else after.banner})"
+                after_banner_url = after.banner.url if hasattr(after.banner, "url") else after.banner
+                embed.set_image(url=after_banner_url)
+                after_url = f"[[after]]({after_banner_url})"
             else:
                 after_url = "None"
             embed.add_field(name="Banner", value=f"{before_url} -> {after_url}", inline=False)
 
         if before.splash != after.splash:
             if before.splash:
-                before_url = await self.upload_img(after.id, 'splash', before.splash.url if hasattr(before.splash, 'url') else before.splash)
+                splash_url = before.splash.url if hasattr(before.splash, "url") else before.splash
+                before_url = await self.upload_img(after.id, 'splash', splash_url)
                 if before_url:
                     before_url = f'[[before]]({before_url})'
                 else:
-                    before_url = f'[[before]]({before.splash.url if hasattr(before.splash, 'url') else before.splash})'
+                    before_url = f'[[before]]({splash_url})'
             else:
                 before_url = "None"
-            if after.banner:
-                embed.set_image(url=after.splash.url if hasattr(after.splash, 'url') else after.splash)
-                after_url = f"[[after]]({after.splash.url if hasattr(after.splash, 'url') else after.splash})"
+            if after.splash:
+                after_splash_url = after.splash.url if hasattr(after.splash, "url") else after.splash
+                embed.set_image(url=after_splash_url)
+                after_url = f"[[after]]({after_splash_url})"
             else:
                 after_url = "None"
             embed.add_field(name="Invite Splash", value=f"{before_url} -> {after_url}", inline=False)
