@@ -52,6 +52,13 @@ from aiohttp import ClientResponseError
 from dateutil.relativedelta import relativedelta
 from pymongo import MongoClient
 
+# Runtime check for AutomodActionExecution compatibility
+if not hasattr(discord, "AutomodActionExecution"):
+    import warnings
+    warnings.warn(
+        "discord.AutomodActionExecution is not available in your discord.py version. "
+        "Automod audit logging will not work. Please upgrade to discord.py 2.3.0 or later."
+    )
 
 def human_timedelta(dt, *, source=None):
     if isinstance(dt, relativedelta):
@@ -1677,8 +1684,8 @@ class Audit(commands.Cog):
         await ctx.send(embed=discord.Embed(description=desc, colour=discord.Colour.orange()))
 
     @commands.Cog.listener()
-    async def on_auto_moderation_action_execution(self, execution: discord.AutoModActionExecution):
-        # See: https://discordpy.readthedocs.io/en/stable/api.html#discord.on_auto_moderation_action_execution
+    async def on_automod_action_execution(self, execution: discord.AutomodActionExecution):
+        # See: https://discordpy.readthedocs.io/en/stable/api.html#discord.on_automod_action_execution
         if not self.c('automod action', execution.guild):
             return
         embed = discord.Embed()
