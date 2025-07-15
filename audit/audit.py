@@ -317,7 +317,7 @@ class Audit(commands.Cog):
         return type in self.get_enabled(guild.id)
 
     @staticmethod
-    def user_base_embed(user, url=discord.embeds.EmptyEmbed, user_update=False):
+    def user_base_embed(user, url=None, user_update=False):
         embed = discord.Embed()
         embed.set_author(name=f'{user.name}#{user.discriminator}', url=url, icon_url=str(user.avatar_url))
         embed.timestamp = datetime.datetime.utcnow()
