@@ -1678,4 +1678,17 @@ class Audit(commands.Cog):
 
 
 async def setup(bot):
-    bot.add_cog(Audit(bot))
+    """Setup function for the Audit cog."""
+    await bot.add_cog(Audit(bot))
+
+def class_docstring_patch():
+    pass
+
+Audit.__doc__ = """Audit logging and moderation events for this server. Logs message edits, deletions, member updates, automod actions, and more. Use the audit command group for configuration."""
+
+# 3. Ensure @audit group and all commands have docstrings
+# (Most commands already have docstrings, but ensure @audit group does)
+Audit.audit.__doc__ = """Audit log configuration and management commands. Use subcommands to enable, disable, ignore, or setup logging."""
+
+# 4. Add a docstring to setup_logging if missing
+Audit.setup_logging.__doc__ = """Setup the Audit logs category and logging channels."""
