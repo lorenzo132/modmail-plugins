@@ -345,9 +345,9 @@ class Audit(commands.Cog):
         # Handle discriminator deprecation
         discriminator = getattr(user, 'discriminator', None)
         if discriminator and discriminator != '0':
-            full_name = f'{user.name}#{discriminator}'
+            full_name = f'{user.name}#{discriminator} ({user.id})'
         else:
-            full_name = user.name
+            full_name = f'{user.name} ({user.id})'
         avatar_url = str(getattr(user, 'display_avatar', getattr(user, 'avatar', None)))
         embed = discord.Embed()
         embed.set_author(name=full_name, url=url, icon_url=avatar_url)
@@ -390,9 +390,9 @@ class Audit(commands.Cog):
         embed.colour = discord.Colour.red()
         embed.set_footer(text=f"Message ID: {message.id} | User ID: {message.author.id}")
         if len(invites) == 1:
-            embed.description = f"**:envelope_with_arrow: {message.author.mention} sent an invite in #{message.channel}**\n\n"
+            embed.description = f"**:envelope_with_arrow: {message.author.mention} ({message.author.id}) sent an invite in #{message.channel}**\n\n"
         else:
-            embed.description = f"**:envelope_with_arrow: {message.author.mention} sent multiple invites in #{message.channel}**\n\n"
+            embed.description = f"**:envelope_with_arrow: {message.author.mention} ({message.author.id}) sent multiple invites in #{message.channel}**\n\n"
         embed.description += '\n'.join(invites)
         await self.send_webhook(message.guild, embed=embed)
 
@@ -402,10 +402,10 @@ class Audit(commands.Cog):
         async def send_embed(text, status_on):
             embed = self.user_base_embed(member)
             if status_on:
-                embed.description = f"**:loud_sound: {member.mention} was {text}**"
+                embed.description = f"**:loud_sound: {member.mention} ({member.id}) was {text}**"
                 embed.colour = discord.Colour.green()
             else:
-                embed.description = f"**:mute: {member.mention} was {text}**"
+                embed.description = f"**:mute: {member.mention} ({member.id}) was {text}**"
                 embed.colour = discord.Colour.red()
             return await self.send_webhook(member.guild, embed=embed)
 
@@ -663,7 +663,7 @@ class Audit(commands.Cog):
 
         if self.c('member nickname', after.guild):
             if before.nick != after.nick:
-                embed = get_embed(f"**:pencil: {after.mention} nickname edited**")
+                embed = get_embed(f"**:pencil: {after.mention} ({after.id}) nickname edited**")
                 embed.add_field(name='Old nickname', value=f"`{before.nick}`")
                 embed.add_field(name='New nickname', value=f"`{after.nick}`")
                 await self.send_webhook(after.guild, embed=embed)
@@ -673,7 +673,7 @@ class Audit(commands.Cog):
             added_roles = sorted(set(after.roles) - set(before.roles), key=lambda r: r.position, reverse=True)
 
             if added_roles or removed_roles:
-                embed = get_embed(f"**:crossed_swords: {after.mention} roles have changed**")
+                embed = get_embed(f"**:crossed_swords: {after.mention} ({after.id}) roles have changed**")
                 if added_roles:
                     embed.add_field(name='Added roles', value=f"{' '.join('``' + r.name + '``' for r in added_roles)}", inline=False)
                 if removed_roles:
@@ -686,7 +686,7 @@ class Audit(commands.Cog):
 
         embed = self.user_base_embed(after, user_update=True)
         embed.colour = discord.Colour.gold()
-        embed.description = f"**:crossed_swords: {after.mention} updated their profile**"
+        embed.description = f"**:crossed_swords: {after.mention} ({after.id}) updated their profile**"
 
         if before.avatar != after.avatar:
             before_url = await self.upload_img(after.id, 'avatar', before.avatar_url)
@@ -714,7 +714,7 @@ class Audit(commands.Cog):
             return
         embed = self.user_base_embed(member, user_update=True)
         embed.colour = discord.Colour.green()
-        embed.description = f"**:inbox_tray: {member.mention} joined the server**"
+        embed.description = f"**:inbox_tray: {member.mention} ({member.id}) joined the server**"
         embed.add_field(name="Account creation", value=human_timedelta(member.created_at))
         await self.send_webhook(member.guild, embed=embed)
 
@@ -725,7 +725,7 @@ class Audit(commands.Cog):
         embed = self.user_base_embed(member, user_update=True)
         embed.colour = discord.Colour.red()
         embed.add_field(name="Joined server", value=human_timedelta(member.joined_at))
-        embed.description = f"**:outbox_tray: {member.mention} left the server**"
+        embed.description = f"**:outbox_tray: {member.mention} ({member.id}) left the server**"
         await self.send_webhook(member.guild, embed=embed)
 
     @commands.Cog.listener()
@@ -734,7 +734,7 @@ class Audit(commands.Cog):
             return
         embed = self.user_base_embed(user, user_update=True)
         embed.colour = discord.Colour.red()
-        embed.description = f"**:man_police_officer: :lock: {user.mention} was banned**"
+        embed.description = f"**:man_police_officer: :lock: {user.mention} ({user.id}) was banned**"
         await self.send_webhook(guild, embed=embed)
 
     @commands.Cog.listener()
@@ -743,7 +743,7 @@ class Audit(commands.Cog):
             return
         embed = self.user_base_embed(user, user_update=True)
         embed.colour = discord.Colour.green()
-        embed.description = f"**:man_police_officer: :unlock: {user.mention} was unbanned**"
+        embed.description = f"**:man_police_officer: :unlock: {user.mention} ({user.id}) was unbanned**"
         await self.send_webhook(guild, embed=embed)
 
     @commands.Cog.listener()
@@ -1163,7 +1163,7 @@ class Audit(commands.Cog):
             return
         embed = self.user_base_embed(member, user_update=True)
         embed.colour = discord.Colour.green()
-        embed.description = f"**:inbox_tray: {member.mention} joined the server**"
+        embed.description = f"**:inbox_tray: {member.mention} ({member.id}) joined the server**"
         embed.add_field(name="Account creation", value=human_timedelta(member.created_at))
         await self.send_webhook(member.guild, embed=embed)
 
@@ -1174,7 +1174,7 @@ class Audit(commands.Cog):
         embed = self.user_base_embed(member, user_update=True)
         embed.colour = discord.Colour.red()
         embed.add_field(name="Joined server", value=human_timedelta(member.joined_at))
-        embed.description = f"**:outbox_tray: {member.mention} left the server**"
+        embed.description = f"**:outbox_tray: {member.mention} ({member.id}) left the server**"
         await self.send_webhook(member.guild, embed=embed)
 
     @commands.Cog.listener()
@@ -1183,7 +1183,7 @@ class Audit(commands.Cog):
             return
         embed = self.user_base_embed(user, user_update=True)
         embed.colour = discord.Colour.red()
-        embed.description = f"**:man_police_officer: :lock: {user.mention} was banned**"
+        embed.description = f"**:man_police_officer: :lock: {user.mention} ({user.id}) was banned**"
         await self.send_webhook(guild, embed=embed)
 
     @commands.Cog.listener()
@@ -1192,7 +1192,7 @@ class Audit(commands.Cog):
             return
         embed = self.user_base_embed(user, user_update=True)
         embed.colour = discord.Colour.green()
-        embed.description = f"**:man_police_officer: :unlock: {user.mention} was unbanned**"
+        embed.description = f"**:man_police_officer: :unlock: {user.mention} ({user.id}) was unbanned**"
         await self.send_webhook(guild, embed=embed)
 
     @commands.Cog.listener()
