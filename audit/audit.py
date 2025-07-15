@@ -259,35 +259,65 @@ class Audit(commands.Cog):
         """Audit logs, copied from mee6."""
 
     @audit.command()
-    async def ignore(self, ctx, *, channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
-        """Ignore a channel or category from audit logs."""
-        if isinstance(channel, discord.CategoryChannel):
-            cats = self.get_ignored_categories(ctx.guild.id)
-            cats.add(channel.id)
-            self.set_ignored_categories(ctx.guild.id, cats)
-        else:
-            chans = self.get_ignored_channels(ctx.guild.id)
-            chans.add(channel.id)
-            self.set_ignored_channels(ctx.guild.id, chans)
-        embed = discord.Embed(description="Ignored!", colour=discord.Colour.green())
+    async def ignore(self, ctx, *channels: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
+        """Ignore one or more channels or categories from audit logs. Usage: !audit ignore #chan1 #chan2 ..."""
+        ignored_channels = self.get_ignored_channels(ctx.guild.id)
+        ignored_categories = self.get_ignored_categories(ctx.guild.id)
+        added_channels = []
+        added_categories = []
+        for channel in channels:
+            if isinstance(channel, discord.CategoryChannel):
+                if int(channel.id) not in ignored_categories:
+                    ignored_categories.add(int(channel.id))
+                    added_categories.append(channel)
+            else:
+                if int(channel.id) not in ignored_channels:
+                    ignored_channels.add(int(channel.id))
+                    added_channels.append(channel)
+        self.set_ignored_channels(ctx.guild.id, set(map(int, ignored_channels)))
+        self.set_ignored_categories(ctx.guild.id, set(map(int, ignored_categories)))
+        desc = []
+        if added_channels:
+            desc.append("Ignored channels: " + ", ".join(f"{c.mention} (ID: {c.id})" for c in added_channels))
+        if added_categories:
+            desc.append("Ignored categories: " + ", ".join(f"{c.name} (ID: {c.id})" for c in added_categories))
+        if not desc:
+            desc = ["Nothing new was ignored (already ignored)."]
+        # Debug log
+        print(f"[DEBUG] Ignored channels now: {sorted(self.get_ignored_channels(ctx.guild.id))}")
+        print(f"[DEBUG] Ignored categories now: {sorted(self.get_ignored_categories(ctx.guild.id))}")
+        embed = discord.Embed(description="\n".join(desc), colour=discord.Colour.green())
         await ctx.send(embed=embed)
 
     @audit.command()
-    async def unignore(self, ctx, *, channel: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
-        """Unignore a channel or category from audit logs."""
-        try:
+    async def unignore(self, ctx, *channels: typing.Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel]):
+        """Unignore one or more channels or categories from audit logs. Usage: !audit unignore #chan1 #chan2 ..."""
+        ignored_channels = self.get_ignored_channels(ctx.guild.id)
+        ignored_categories = self.get_ignored_categories(ctx.guild.id)
+        removed_channels = []
+        removed_categories = []
+        for channel in channels:
             if isinstance(channel, discord.CategoryChannel):
-                cats = self.get_ignored_categories(ctx.guild.id)
-                cats.remove(channel.id)
-                self.set_ignored_categories(ctx.guild.id, cats)
+                if int(channel.id) in ignored_categories:
+                    ignored_categories.remove(int(channel.id))
+                    removed_categories.append(channel)
             else:
-                chans = self.get_ignored_channels(ctx.guild.id)
-                chans.remove(channel.id)
-                self.set_ignored_channels(ctx.guild.id, chans)
-        except KeyError:
-            embed = discord.Embed(description="Already not ignored!", colour=discord.Colour.red())
-        else:
-            embed = discord.Embed(description="Unignored!", colour=discord.Colour.green())
+                if int(channel.id) in ignored_channels:
+                    ignored_channels.remove(int(channel.id))
+                    removed_channels.append(channel)
+        self.set_ignored_channels(ctx.guild.id, set(map(int, ignored_channels)))
+        self.set_ignored_categories(ctx.guild.id, set(map(int, ignored_categories)))
+        desc = []
+        if removed_channels:
+            desc.append("Unignored channels: " + ", ".join(f"{c.mention} (ID: {c.id})" for c in removed_channels))
+        if removed_categories:
+            desc.append("Unignored categories: " + ", ".join(f"{c.name} (ID: {c.id})" for c in removed_categories))
+        if not desc:
+            desc = ["Nothing was unignored (already not ignored)."]
+        # Debug log
+        print(f"[DEBUG] Ignored channels now: {sorted(self.get_ignored_channels(ctx.guild.id))}")
+        print(f"[DEBUG] Ignored categories now: {sorted(self.get_ignored_categories(ctx.guild.id))}")
+        embed = discord.Embed(description="\n".join(desc), colour=discord.Colour.green())
         await ctx.send(embed=embed)
 
     @audit.command()
