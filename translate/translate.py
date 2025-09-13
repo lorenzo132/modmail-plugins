@@ -333,24 +333,24 @@ class Translate(commands.Cog):
           Example: {prefix}tr Zulu Hello world!
 
                 Subcommands:
-                    - {prefix}tr text <language> <text>        → Quick translate
-                    - {prefix}tr message <text>                → Translate provided text to English
-                    - {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
-                    - {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
-                    - {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
-                    - {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
+                    • {prefix}tr text <language> <text>        → Quick translate
+                    • {prefix}tr message <text>                → Translate provided text to English
+                    • {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
+                    • {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
+                    • {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
+                    • {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
 
                 Related commands:
-                    - {prefix}t <language> <text>              → Quick translate
-                    - {prefix}att <language|off>               → Per-thread auto-translate (set target or disable)
-                    - {prefix}tat <true|false>                 → Global auto-translate on/off
-                    - {prefix}attr <language> <message>        → Translate and reply to user (translation only)
-                    - {prefix}trr [language] <message>         → Translate then reply
-                    - {prefix}trar [language] <message>        → Translate then anon-reply
+                    • {prefix}t <language> <text>              → Quick translate
+                    • {prefix}att <language|off>               → Per-thread auto-translate (set target or disable)
+                    • {prefix}tat <true|false>                 → Global auto-translate on/off
+                    • {prefix}attr <language> <message>        → Translate and reply to user (translation only)
+                    • {prefix}trr [language] <message>         → Translate then reply
+                    • {prefix}trar [language] <message>        → Translate then anon-reply
 
                 Notes:
-                    - Use `{prefix}tr langs` to see all supported languages.
-                    - Language may be a name (e.g., French) or a code (e.g., fr).
+                    • Use `{prefix}tr langs` to see all supported languages.
+                    • Language may be a name (e.g., French) or a code (e.g., fr).
         """
 
         if not language or not text:
