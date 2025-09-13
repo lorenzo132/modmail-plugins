@@ -332,20 +332,20 @@ class Translate(commands.Cog):
         """Show all supported languages for translation."""
         available = ', '.join([f"{name} ({code})" for code, name in conv.items()])
         url = 'https://github.com/lorenzo132/modmail-plugins/blob/master/translate/langs.json'
-            em = discord.Embed(color=discord.Color.blue())
-            # Use avatar.url if available (discord.py v2.x+), else fallback to default_avatar.url
+        em = discord.Embed(color=discord.Color.blue())
+        # Use avatar.url if available (discord.py v2.x+), else fallback to default_avatar.url
+        try:
+            author_icon = ctx.author.avatar.url
+        except AttributeError:
+            author_icon = getattr(ctx.author, 'avatar_url', None)
+        if not author_icon:
             try:
-                author_icon = ctx.author.avatar.url
-            except AttributeError:
-                author_icon = getattr(ctx.author, 'avatar_url', None)
-            if not author_icon:
-                try:
-                    author_icon = ctx.author.default_avatar.url
-                except Exception:
-                    author_icon = None
-            em.set_author(name='Available Languages:', icon_url=author_icon)
-            em.description = f'```\n{available}```'
-            em.set_footer(text=f'Full list: {url}', icon_url='https://i.imgur.com/yeHFKgl.png')
+                author_icon = ctx.author.default_avatar.url
+            except Exception:
+                author_icon = None
+        em.set_author(name='Available Languages:', icon_url=author_icon)
+        em.description = f'```\n{available}```'
+        em.set_footer(text=f'Full list: {url}', icon_url='https://i.imgur.com/yeHFKgl.png')
         try:
             await ctx.send(embed=em, delete_after=420)
         except discord.Forbidden:
@@ -408,7 +408,7 @@ class Translate(commands.Cog):
         original command by officialpiyush
         """
         self.enabled = enabled
-        await self.coll.update_one(
+        await self.db.update_one(
             {'_id': 'config'},
             {'$set': {'at-enabled': self.enabled}}, 
             upsert=True
