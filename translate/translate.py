@@ -26,6 +26,18 @@ from core.models import PermissionLevel
 
 from mtranslate import translate
 from googletrans import Translator
+# Try multiple known paths for Modmail's paginator utility
+PaginatorEmbedInterface = None  # type: ignore
+try:
+    from core.utils.paginator import PaginatorEmbedInterface  # type: ignore
+except Exception:
+    try:
+        from cogs.utils.paginator import PaginatorEmbedInterface  # type: ignore
+    except Exception:
+        try:
+            from utils.paginator import PaginatorEmbedInterface  # type: ignore
+        except Exception:
+            PaginatorEmbedInterface = None  # type: ignore
 
 
 conv = {
@@ -223,17 +235,41 @@ class Translate(commands.Cog):
         self.mod_color = discord.Colour(0x7289da) ## blurple
         self.db = bot.plugin_db.get_partition(self)
         self.translator = Translator()
-        self.tt = set()
+        # Auto-translate mapping per thread channel id -> language code
+        self.tt = {}
         self.enabled = True
         asyncio.create_task(self._set_config())
-    
-    async def _set_config(self):  # exception=AttributeError("'NoneType' object has no attribute 'get'")>
+
+    def _get_guild_icon(self, guild):
+        """Return the guild icon URL or None."""
+        if not guild:
+            return None
         try:
-            config = await self.db.find_one({'_id': 'config'})
-            self.enabled = config.get('enabled', True)
-            self.tt = set(config.get('auto-translate', []))  # AttributeError: 'NoneType' object has no attribute 'get'
-        except:
-            pass
+            return guild.icon.url
+        except AttributeError:
+            icon = getattr(guild, 'icon', None)
+            if icon and hasattr(icon, 'url'):
+                return icon.url
+            return getattr(guild, 'icon_url', None)
+    
+    async def _set_config(self):
+        """Load persisted settings for this plugin with safe defaults.
+
+        Keys:
+        - at-enabled: bool (defaults True) → global toggle for auto-translate
+        - auto-translate: dict[channel_id -> lang_code] (or legacy list of channel IDs)
+        """
+        config = await self.db.find_one({'_id': 'config'}) or {}
+        # Prefer new key 'at-enabled'; fall back to legacy 'enabled' if present
+        self.enabled = config.get('at-enabled', config.get('enabled', True))
+        stored = config.get('auto-translate', {})
+        # Back-compat: handle legacy list of channel IDs by defaulting to English
+        if isinstance(stored, list):
+            self.tt = {cid: 'en' for cid in stored}
+        elif isinstance(stored, dict):
+            self.tt = stored
+        else:
+            self.tt = {}
 
 
     # +------------------------------------------------------------+
@@ -345,29 +381,49 @@ class Translate(commands.Cog):
         per_page = 30
         total_pages = max(1, (len(sorted_items) + per_page - 1) // per_page)
         page = max(1, min(page, total_pages))
-        start = (page - 1) * per_page
-        end = start + per_page
-        slice_items = sorted_items[start:end]
-
-        lines = [f"{name} ({code})" for code, name in slice_items]
-        body = "\n".join(lines) if lines else "No languages found."
-
         url = 'https://github.com/lorenzo132/modmail-plugins/blob/master/translate/langs.json'
-        em = discord.Embed(color=discord.Color.blue())
-        # Small icon = server icon
+        guild_icon = self._get_guild_icon(ctx.guild)
+
+        # Build all pages as embeds
+        pages = []
+        for p in range(1, total_pages + 1):
+            start = (p - 1) * per_page
+            end = start + per_page
+            slice_items = sorted_items[start:end]
+            lines = [f"{name} ({code})" for code, name in slice_items]
+            body = "\n".join(lines) if lines else "No languages found."
+
+            em = discord.Embed(color=discord.Color.blue())
+            em.set_author(name=f'Available Languages (Page {p}/{total_pages})', icon_url=guild_icon)
+            em.description = f'```\n{body}```'
+            em.set_footer(text=f'Full list: {url}', icon_url=guild_icon)
+            pages.append(em)
+
+        # If we have multiple pages and Modmail's paginator is available, use it
+        if len(pages) > 1 and PaginatorEmbedInterface is not None:
+            try:
+                interface = PaginatorEmbedInterface(self.bot, pages, owner=ctx.author)
+                await interface.send_to(ctx)
+                return
+            except Exception:
+                # Fallback to page-number approach if paginator API differs
+                pass
+
+        # Fallback: send the requested page (or the only page)
+        idx = max(1, min(page, total_pages)) - 1
         try:
-            guild_icon = ctx.guild.icon.url
-        except AttributeError:
-            guild_icon = getattr(getattr(ctx.guild, 'icon', None), 'url', None) if ctx.guild else None
-            if not guild_icon:
-                guild_icon = getattr(ctx.guild, 'icon_url', None) if ctx.guild else None
-        em.set_author(name=f'Available Languages (Page {page}/{total_pages})', icon_url=guild_icon)
-        em.description = f'```\n{body}```'
-        em.set_footer(text=f'Full list: {url}', icon_url=guild_icon)
-        try:
-            await ctx.send(embed=em)
+            await ctx.send(embed=pages[idx])
         except discord.Forbidden:
-            msg = f'Available languages (Page {page}/{total_pages}):\n```\n{body}```\n{url}'
+            # Plain text fallback
+            start = idx * per_page
+            end = start + per_page
+            slice_items = sorted_items[start:end]
+            lines = [f"{name} ({code})" for code, name in slice_items]
+            body = "\n".join(lines) if lines else "No languages found."
+            msg = (
+                f'Available languages (Page {idx+1}/{total_pages}):\n```\n{body}```\n{url}\n'
+                f'Use `{ctx.prefix}{ctx.invoked_with} langs <page>` to navigate.'
+            )
             await ctx.send(msg)
 
     # +------------------------------------------------------------+
@@ -431,6 +487,50 @@ class Translate(commands.Cog):
         await ctx.channel.send(embed=em)
 
     # +------------------------------------------------------------+
+    # |           tr messageid (subcommand)                        |
+    # +------------------------------------------------------------+
+    @tr.command(name="messageid", aliases=["mid", "msgid"], help="Translate a message in this thread by its ID. Usage: tr messageid <id> [language]")
+    @checks.thread_only()
+    async def tr_messageid(self, ctx, message_id: int, language: str = 'en'):
+        """Translate the content of a message in this thread by ID.
+
+        Usage:
+          {prefix}tr messageid <message_id> [language]
+        Defaults to English when language isn't provided.
+        """
+        # Try to fetch the message from the current channel (thread)
+        try:
+            msg = await ctx.channel.fetch_message(message_id)
+        except Exception:
+            await ctx.send("❌ Couldn't find a message with that ID in this channel.", delete_after=15)
+            return
+
+        # Extract text: prefer embed description (Modmail relays), else content
+        text = None
+        if msg.embeds and getattr(msg.embeds[0], 'description', None):
+            text = msg.embeds[0].description
+        elif msg.content:
+            text = msg.content
+        if not text:
+            await ctx.send("⚠️ That message has no textual content to translate.", delete_after=15)
+            return
+
+        lang_code = self._resolve_lang_code(language or 'en')
+        try:
+            tmsg = self.translator.translate(text, dest=lang_code)
+            translated = tmsg.text
+        except Exception as e:
+            await ctx.send(f"⚠️ Translation failed: {e}", delete_after=15)
+            return
+
+        em = discord.Embed(color=4388013)
+        em.add_field(name="Original", value=text if len(text) < 1000 else text[:1000] + '…', inline=False)
+        em.add_field(name=f"Translated ({conv.get(lang_code, lang_code)})", value=translated if len(translated) < 1000 else translated[:1000] + '…', inline=False)
+        guild_icon = self._get_guild_icon(ctx.guild)
+        em.set_footer(text="Translated via message ID", icon_url=guild_icon)
+        await ctx.channel.send(embed=em)
+
+    # +------------------------------------------------------------+
     # |     tr auto-thread & tr toggle-auto (subcommands)         |
     # +------------------------------------------------------------+
     @tr.command(name="auto-thread", help="Add/remove this thread to the auto-translate list.")
@@ -454,7 +554,6 @@ class Translate(commands.Cog):
     async def translatetext(self, ctx, *, message):
         """
         Translates given messageID into English
-        original command by officialpiyush
         """
         tmsg = self.translator.translate(message)
         em = discord.Embed()
@@ -476,29 +575,56 @@ class Translate(commands.Cog):
     @commands.command(aliases=["att"])
     @checks.has_permissions(PermissionLevel.SUPPORTER)
     @checks.thread_only()
-    async def auto_translate_thread(self, ctx):
-        """ to be used inside ticket threads
-        original command by officialpiyush
+    async def auto_translate_thread(self, ctx, language: str = None):
+        """Enable/disable per-thread auto-translate and set target language.
+
+        Usage:
+          {prefix}att <language>   -> Enable/update auto-translate to language (e.g. English)
+          {prefix}att off          -> Disable auto-translate for this thread
         """
         if "User ID:" not in ctx.channel.topic:
             await ctx.send("The Channel Is Not A Modmail Thread")
             return
 
-        if ctx.channel.id in self.tt:
-            self.tt.remove(ctx.channel.id)
-            removed = True
+        ch_id = ctx.channel.id
+        # Disable keywords
+        if language and language.lower() in {"off", "disable", "disabled", "false", "none"}:
+            if ch_id in self.tt:
+                self.tt.pop(ch_id, None)
+                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+                await ctx.send("Removed channel from Auto Translations list.")
+            else:
+                await ctx.send("Auto Translations were not enabled for this thread.")
+            return
 
-        else:
-            self.tt.add(ctx.channel.id)
-            removed = False
-        
-        await self.db.update_one(
-            {'_id': 'config'},
-            {'$set': {'auto-translate': list(self.tt)}}, 
-            upsert=True
-            )
+        if not language:
+            # Toggle behavior if no language passed
+            if ch_id in self.tt:
+                self.tt.pop(ch_id, None)
+                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+                await ctx.send("Removed channel from Auto Translations list.")
+            else:
+                # Default to English if enabling without a language
+                self.tt[ch_id] = 'en'
+                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+                await ctx.send("Added channel to Auto Translations list. Language set to English.")
+            return
 
-        await ctx.send(f"{'Removed' if removed else 'Added'} Channel {'from' if removed else 'to'} Auto Translations List.")
+        # Resolve language to code
+        lang_input = language.strip()
+        lang_code = None
+        for code, name in conv.items():
+            if lang_input.lower() == code or lang_input.lower() == name.lower():
+                lang_code = code
+                break
+        if not lang_code:
+            await ctx.send(f"❌ Unknown language: `{lang_input}`. Use `{ctx.prefix}tr langs` to see all supported languages.", delete_after=20)
+            return
+
+        # Enable/update mapping
+        self.tt[ch_id] = lang_code
+        await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+        await ctx.send(f"Auto-translate enabled for this thread → {conv[lang_code]} ({lang_code}).")
     
     # +------------------------------------------------------------+
     # |              Toggle Auto Translate on/off                  |
@@ -507,9 +633,7 @@ class Translate(commands.Cog):
     @checks.has_permissions(PermissionLevel.SUPPORTER)
     @checks.thread_only()
     async def toggle_auto_translations(self, ctx, enabled: bool):
-        """ to be used inside ticket threads
-        original command by officialpiyush
-        """
+        """to be used inside ticket threads"""
         self.enabled = enabled
         await self.db.update_one(
             {'_id': 'config'},
@@ -517,7 +641,101 @@ class Translate(commands.Cog):
             upsert=True
             )
         await ctx.send(f"{'Enabled' if enabled else 'Disabled'} Auto Translations")
+
+    # +------------------------------------------------------------+
+    # |       Translate and reply helpers/commands                |
+    # +------------------------------------------------------------+
+    def _resolve_lang_code(self, lang: str, default: str = 'en') -> str:
+        if not lang:
+            return default
+        lang_input = lang.strip()
+        for code, name in conv.items():
+            if lang_input.lower() == code or lang_input.lower() == name.lower():
+                return code
+        return default
+
+    async def _invoke_reply(self, ctx, text: str, anonymous: bool = False):
+        """Invoke Modmail's reply/anonreply command as the invoker."""
+        cmd = None
+        if anonymous:
+            cmd = ctx.bot.get_command('anonreply') or ctx.bot.get_command('ar') or ctx.bot.get_command('areply')
+        else:
+            cmd = ctx.bot.get_command('reply') or ctx.bot.get_command('r')
+        if not cmd:
+            # Fallback: just send to channel (will be relayed by Modmail in most setups)
+            await ctx.send(text)
+            return
+        await ctx.invoke(cmd, message=text)
+
+    @commands.command(name='attr')
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    @checks.thread_only()
+    async def auto_translate_and_reply(self, ctx, language: str, *, message: str):
+        """Translate a message then reply to the user with only the translation.
+
+        Also posts an internal embed (bot message) showing Original and Translated for staff.
+
+        Usage: {prefix}attr <language> <message>
+        Example: {prefix}attr English Hello, how are you?
+        """
+        lang_code = self._resolve_lang_code(language)
+        translated = translate(message, lang_code)
+
+        # Send internal embed for staff (bot message, typically not relayed)
+        em = discord.Embed(color=self.mod_color)
+        em.set_author(name=f"Translate & Reply → {conv.get(lang_code, lang_code)}")
+        em.add_field(name="Original", value=f"```{message}```", inline=False)
+        em.add_field(name=f"Translated ({conv.get(lang_code, lang_code)})", value=f"```{translated}```", inline=False)
+        guild_icon = self._get_guild_icon(ctx.guild)
+        em.set_footer(text="attr", icon_url=guild_icon)
+        try:
+            await ctx.send(embed=em)
+        except discord.Forbidden:
+            await ctx.send(f"Original:\n```{message}```\nTranslated ({conv.get(lang_code, lang_code)}):\n```{translated}```")
+
+        # Send translated message to user via reply
+        await self._invoke_reply(ctx, translated, anonymous=False)
+
+    @commands.command(name='trr')
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    @checks.thread_only()
+    async def translate_reply(self, ctx, language_or_message: str = None, *, message: str = None):
+        """Translate then reply. Language optional (defaults to English).
+
+        Usage:
+          {prefix}trr <language> <message>
+          {prefix}trr <message>              (defaults to English)
+        """
+        if message is None and language_or_message is not None:
+            # Assume first arg is actually the message
+            language = 'en'
+            message = language_or_message
+        else:
+            language = language_or_message or 'en'
+        lang_code = self._resolve_lang_code(language)
+        translated = translate(message, lang_code)
+        await self._invoke_reply(ctx, translated, anonymous=False)
+
+    @commands.command(name='trar')
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    @checks.thread_only()
+    async def translate_anonreply(self, ctx, language_or_message: str = None, *, message: str = None):
+        """Translate then anon-reply. Language optional (defaults to English).
+
+        Usage:
+          {prefix}trar <language> <message>
+          {prefix}trar <message>            (defaults to English)
+        """
+        if message is None and language_or_message is not None:
+            language = 'en'
+            message = language_or_message
+        else:
+            language = language_or_message or 'en'
+        lang_code = self._resolve_lang_code(language)
+        translated = translate(message, lang_code)
+        await self._invoke_reply(ctx, translated, anonymous=True)
     
+    @commands.Cog.listener()
     async def on_message(self, message):
         if not self.enabled:
             return
@@ -537,9 +755,12 @@ class Translate(commands.Cog):
             return
         
         msg = message.embeds[0].description
-        tmsg = self.translator.translate(msg)
+        # Translate to the configured language code for this thread
+        lang_code = self.tt.get(channel.id, 'en')
+        tmsg = self.translator.translate(msg, dest=lang_code)
         em = discord.Embed()
-        em.description = tmsg.text
+        em.add_field(name="Original", value=msg if len(msg) < 1000 else msg[:1000] + '…', inline=False)
+        em.add_field(name=f"Translated ({conv.get(lang_code, lang_code)})", value=tmsg.text if len(tmsg.text) < 1000 else tmsg.text[:1000] + '…', inline=False)
         em.color = 4388013
         # Footer small icon = server icon
         try:
