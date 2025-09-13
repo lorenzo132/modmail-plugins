@@ -321,31 +321,16 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     @commands.group(description='Translate text between languages. Usage: {prefix}tr <language> <text>', aliases=['translate'], invoke_without_command=True)
     async def tr(self, ctx, language: str = None, *, text: str = None):
-        """
-        🌍 Translate text from one language to another.
+                """
+                🌍 Translate text from one language to another.
 
-        Usage:
-          {prefix}tr <language> <text>
-          Example: {prefix}tr Zulu Hello world!
+                Usage:
+                    {prefix}tr <language> <text>
+                    Example: {prefix}tr Zulu Hello world!
 
-        Subcommands:
-          • {prefix}tr text <language> <text>        → Quick translate as subcommand
-          • {prefix}tr message <text>                → Translate provided text to English
-          • {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
-          • {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
-          • {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
-          • {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
-
-        Related commands:
-          • {prefix}t <language> <text>              → Quick translate
-          • {prefix}att <language|off>               → Per-thread auto-translate target (or off)
-          • {prefix}tat <true|false>                 → Global auto-translate on/off
-          • {prefix}attr <language> <message>        → Translate and reply to user (translation only)
-          • {prefix}trr [language] <message>         → Translate then reply
-          • {prefix}trar [language] <message>        → Translate then anon-reply
-
-        Note: Language may be a name (e.g., French) or a code (e.g., fr).
-        """
+                Tip: Use `{prefix}tr langs` to see all supported languages.
+                Note: Language may be a name (e.g., French) or a code (e.g., fr).
+                """
 
         # If a subcommand was invoked, don't run the base behavior
         if ctx.invoked_subcommand is not None:
@@ -502,7 +487,7 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     # |              tr text (subcommand)                         |
     # +------------------------------------------------------------+
-    @tr.command(name="text", help="Quickly translate text: tr text <language> <text>")
+    @tr.command(name="text", help="Quickly translate text")
     async def tr_text(self, ctx, language: str = None, *, text: str = None):
         """Quick translate as a subcommand of tr.
 
@@ -547,7 +532,7 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     # |           tr message (subcommand)                         |
     # +------------------------------------------------------------+
-    @tr.command(name="message", aliases=["msg"], help="Translate the provided message content into English.")
+    @tr.command(name="message", aliases=["msg"], help="Translate provided text to English")
     async def tr_message(self, ctx, *, message):
         """Translate a given message string into English (default target).
 
@@ -562,7 +547,7 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     # |           tr messageid (subcommand)                        |
     # +------------------------------------------------------------+
-    @tr.command(name="messageid", aliases=["mid", "msgid"], help="Translate a message in this thread by its ID. Usage: tr messageid <id> [language]")
+    @tr.command(name="messageid", aliases=["mid", "msgid"], help="Translate a message in this thread by ID")
     async def tr_messageid(self, ctx, message_id: int, language: str = 'en'):
         """Translate the content of a message in this thread by ID.
 
