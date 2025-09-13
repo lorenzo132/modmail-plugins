@@ -240,6 +240,35 @@ class Translate(commands.Cog):
         self.enabled = True
         asyncio.create_task(self._set_config())
 
+    def _serialize_tt(self):
+        """Return a copy of self.tt with string keys for MongoDB storage."""
+        try:
+            return {str(k): v for k, v in (self.tt or {}).items()}
+        except Exception:
+            return {}
+
+    def _deserialize_tt(self, data):
+        """Convert stored auto-translate mapping to use int channel IDs as keys."""
+        if isinstance(data, dict):
+            out = {}
+            for k, v in data.items():
+                try:
+                    out[int(k)] = v
+                except Exception:
+                    # Skip keys that cannot be parsed as ints
+                    continue
+            return out
+        if isinstance(data, list):
+            # Legacy: list of channel IDs → default to English
+            out = {}
+            for k in data:
+                try:
+                    out[int(k)] = 'en'
+                except Exception:
+                    continue
+            return out
+        return {}
+
     def _get_guild_icon(self, guild):
         """Return the guild icon URL or None."""
         if not guild:
@@ -263,13 +292,8 @@ class Translate(commands.Cog):
         # Prefer new key 'at-enabled'; fall back to legacy 'enabled' if present
         self.enabled = config.get('at-enabled', config.get('enabled', True))
         stored = config.get('auto-translate', {})
-        # Back-compat: handle legacy list of channel IDs by defaulting to English
-        if isinstance(stored, list):
-            self.tt = {cid: 'en' for cid in stored}
-        elif isinstance(stored, dict):
-            self.tt = stored
-        else:
-            self.tt = {}
+        # Normalize to int keys internally
+        self.tt = self._deserialize_tt(stored)
 
     async def _translate_text(self, text, dest=None):
         """Translate text using googletrans; if the method is async, await it.
@@ -614,7 +638,7 @@ class Translate(commands.Cog):
         if language and language.lower() in {"off", "disable", "disabled", "false", "none"}:
             if ch_id in self.tt:
                 self.tt.pop(ch_id, None)
-                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self._serialize_tt()}}, upsert=True)
                 await ctx.send("Removed channel from Auto Translations list.")
             else:
                 await ctx.send("Auto Translations were not enabled for this thread.")
@@ -624,12 +648,12 @@ class Translate(commands.Cog):
             # Toggle behavior if no language passed
             if ch_id in self.tt:
                 self.tt.pop(ch_id, None)
-                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self._serialize_tt()}}, upsert=True)
                 await ctx.send("Removed channel from Auto Translations list.")
             else:
                 # Default to English if enabling without a language
                 self.tt[ch_id] = 'en'
-                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+                await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self._serialize_tt()}}, upsert=True)
                 await ctx.send("Added channel to Auto Translations list. Language set to English.")
             return
 
@@ -646,7 +670,7 @@ class Translate(commands.Cog):
 
         # Enable/update mapping
         self.tt[ch_id] = lang_code
-        await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self.tt}}, upsert=True)
+        await self.db.update_one({'_id': 'config'}, {'$set': {'auto-translate': self._serialize_tt()}}, upsert=True)
         await ctx.send(f"Auto-translate enabled for this thread → {conv[lang_code]} ({lang_code}).")
     
     # +------------------------------------------------------------+
@@ -777,7 +801,33 @@ class Translate(commands.Cog):
         if not message.embeds:
             return
         
-        msg = message.embeds[0].description
+        # Avoid translating our own auto-translate embeds or bot help/command embeds
+        emb0 = message.embeds[0]
+        footer_text = getattr(getattr(emb0, 'footer', None), 'text', '') or ''
+        if footer_text.strip() == 'Auto Translate Plugin':
+            return
+        if message.author.id == getattr(self.bot.user, 'id', None):
+            # Heuristic: help/command embeds usually contain these tokens
+            parts = []
+            title = getattr(emb0, 'title', None)
+            desc = getattr(emb0, 'description', None)
+            if title:
+                parts.append(title)
+            if desc:
+                parts.append(desc)
+            for f in getattr(emb0, 'fields', []) or []:
+                try:
+                    parts.append((f.name or ''))
+                    parts.append((f.value or ''))
+                except Exception:
+                    pass
+            blob = ' '.join(parts)
+            if any(token in blob for token in ['Usage:', 'Permission level', 'Aliases:', 'Example:', 'Examples:']):
+                return
+
+        msg = emb0.description
+        if not msg:
+            return
         # Translate to the configured language code for this thread
         lang_code = self.tt.get(channel.id, 'en')
         translated = await self._translate_text(msg, dest=lang_code)
