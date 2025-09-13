@@ -239,84 +239,55 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     # |                   Translate cmd                            |
     # +------------------------------------------------------------+
-    @commands.group(description='Command to translate across languages', aliases=['translate'],  invoke_without_command=True)
+    @commands.group(description='Translate text between languages. Usage: {prefix}tr <language> <text>', aliases=['translate'], invoke_without_command=True)
     async def tr(self, ctx, language: str = None, *, text: str = None):
         """
-        (∩｀-´)⊃━☆ﾟ.*･｡ﾟ translate text from one language to another
+        🌍 Translate text from one language to another.
 
-        Usage:
-        {prefix}tr Zulu hello world, welcome to this server
+        **Usage:**
+        `{prefix}tr <language> <text>`
+        Example: `{prefix}tr Zulu Hello world!`
+        Use `{prefix}tr langs` to see all supported languages.
         """
-        lang = language.title()
-        available = ', '.join(conv.values())
-        languages = 'Albanian, Arabic, Aymara, Belarusian, Bulgarian, Catalan, Chinese, Croatian, Czech, ' \
-                    'Danish, Dutch, English, Estonian, Fijian, Finnish, French, Georgian, German, Greek, ' \
-                    'Hebrew, Hindi, Irish, Icelandic, Italian, Japanese, Kannada, Kashmiri, Korean, Latin, ' \
-                    'Lithuanian, Malayalam, Marathi, Norwegian, Panjabi, Persian, Polish, Portuguese, ' \
-                    'Quechua, Romanian, Russian, Sanskrit, Scottish-Gaelic, Spanish, Swahili, Swedish, ' \
-                    'Tamil, Telugu, Tagalog, Turkish, Urdu, Welsh, Yiddish, Zulu \n\nFor full list: \n' \
-                    'https://github.com/WebKide/modmail-plugins/translate/langs.json'
-        m = f'{ctx.message.author.display_name} | {ctx.message.author.id}'
-        msg = f'**Usage:** {ctx.prefix}{ctx.invoked_with} <Language_target> <message>\n\n```bf\n{languages}```'
-        distance = self.bot or self.bot.message
-        duration = f'Translated in {distance.ws.latency * 990:.2f} ms'
+        if not language or not text:
+            usage = f"**Usage:** `{ctx.prefix}{ctx.invoked_with} <language> <text>`\nExample: `{ctx.prefix}{ctx.invoked_with} Spanish Hello!`\nUse `{ctx.prefix}{ctx.invoked_with} langs` for all languages."
+            await ctx.send(usage, delete_after=30)
+            return
+
+        lang_input = language.strip()
+        lang_code = None
+        lang_name = None
+        # Try to match by code or name (case-insensitive)
+        if lang_input.lower() in conv:
+            lang_code = lang_input.lower()
+            lang_name = conv[lang_code]
+        else:
+            for code, name in conv.items():
+                if lang_input.lower() == name.lower():
+                    lang_code = code
+                    lang_name = name
+                    break
+
+        if not lang_code:
+            await ctx.send(f"❌ Unknown language: `{lang_input}`. Use `{ctx.prefix}{ctx.invoked_with} langs` to see all supported languages.", delete_after=20)
+            return
 
         try:
-            em = discord.Embed(color=self.mod_color)
-            em.set_author(name='Available Languages:', icon_url=ctx.message.author.avatar_url),
-            em.description = f'```bf\n{available}```'
-            em.set_footer(text=duration, icon_url='https://i.imgur.com/yeHFKgl.png')
+            translated = translate(text, lang_code)
+        except Exception as e:
+            await ctx.send(f"⚠️ Translation failed: {e}", delete_after=20)
+            return
 
-            if lang in conv:
-                t = f'{translate(text, lang)}'
-                e = discord.Embed(color=self.user_color)
-                e.set_author(name=m, icon_url=ctx.message.author.avatar_url),
-                e.add_field(name='Original1', value=f'*```css\n{text}```*', inline=False)
-                e.add_field(name='Translation1', value=f'```css\n{t}```', inline=False)
-                e.set_footer(text=duration, icon_url='https://i.imgur.com/yeHFKgl.png')
-                try:
-                    await ctx.message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
-                except discord.Forbidden:  # FORBIDDEN (status code: 403): Missing Permissions
-                    pass
-                return await ctx.send(embed=e)
-
-            lang = dict(zip(conv.values(), conv.keys())).get(lang.lower().title())
-            if lang:
-                tn = f'{translate(text, lang)}'
-                em = discord.Embed(color=self.user_color)
-                em.set_author(name=m, icon_url=ctx.message.author.avatar_url),
-                em.add_field(name='Original Message', value=f'*```bf\n{text}```*', inline=False)
-                em.add_field(name=f'Translation to {language}', value=tn, inline=False)
-                em.set_footer(text=duration, icon_url='https://i.imgur.com/yeHFKgl.png')
-                try:
-                    await ctx.message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
-                except discord.Forbidden:  # FORBIDDEN (status code: 403): Missing Permissions
-                    pass
-                await ctx.send(embed=em)
-
-            else:
-                await ctx.send(msg, delete_after=23)
-
+        embed = discord.Embed(color=self.user_color)
+        embed.set_author(name=f"{ctx.author.display_name} ({ctx.author.id})", icon_url=getattr(ctx.author, 'avatar_url', None))
+        embed.add_field(name="Original", value=f"```{text}```", inline=False)
+        embed.add_field(name=f"Translation ({lang_name})", value=f"```{translated}```", inline=False)
+        embed.set_footer(text="Use {0}tr langs for all languages".format(ctx.prefix), icon_url='https://i.imgur.com/yeHFKgl.png')
+        try:
+            await ctx.message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
         except discord.Forbidden:
-            if lang in conv:
-                trans = f'{ctx.message.author.mention} | *{translate(text, lang)}*'
-                return await ctx.send(trans)
-
-            lang = dict(zip(conv.values(), conv.keys())).get(lang.lower().title())
-            if lang:
-                trans = f'{ctx.message.author.mention} | *{translate(text, lang)}*'
-                await ctx.send(trans)
-                try:
-                    await ctx.message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
-                except discord.Forbidden:  # FORBIDDEN (status code: 403): Missing Permissions
-                    pass
-
-            else:
-                await ctx.send(msg, delete_after=23)
-                try:
-                    await ctx.message.add_reaction('\N{BLACK QUESTION MARK ORNAMENT}')
-                except discord.Forbidden:  # FORBIDDEN (status code: 403): Missing Permissions
-                    pass
+            pass
+        await ctx.send(embed=embed)
 
     # +------------------------------------------------------------+
     # |                Translate plain text                        |
@@ -324,68 +295,61 @@ class Translate(commands.Cog):
     @commands.command(no_pm=True)
     async def t(self, ctx, language: str = None, *, text: str = None):
         """
-        (∩｀-´)⊃━☆ﾟ.*･｡ﾟ translate some text
+        Quick translate: `{prefix}t <language> <text>`
+        Example: `{prefix}t French How are you?`
         """
-        lang = language.title()
-        available = ', '.join(conv.values())
+        if not language or not text:
+            await ctx.send(f"**Usage:** `{ctx.prefix}t <language> <text>`\nExample: `{ctx.prefix}t French How are you?`", delete_after=20)
+            return
+
+        lang_input = language.strip()
+        lang_code = None
+        for code, name in conv.items():
+            if lang_input.lower() == code or lang_input.lower() == name.lower():
+                lang_code = code
+                break
+        if not lang_code:
+            await ctx.send(f"❌ Unknown language: `{lang_input}`. Use `{ctx.prefix}tr langs` to see all supported languages.", delete_after=20)
+            return
         try:
             await ctx.message.delete()
-            if lang in conv:
-                t = f'{translate(text, lang)}'
-                if (len(t) > 2000):
-                    cropped = t[:2000]
-                    await ctx.send(cropped, delete_after=360)
-                else:
-                    await ctx.send(t, delete_after=360)
-
-            lang = dict(zip(conv.values(), conv.keys())).get(lang.lower().title())
-            if lang:
-                tn = f'{translate(text, lang)}'
-                if (len(tn) > 2000):
-                    cropped = tn[:2000]
-                    await ctx.send(cropped, delete_after=360)
-                else:
-                    await ctx.send(tn, delete_after=360)
-            else:
-                return
-
-        except discord.Forbidden:
-            if lang in conv:
-                trans = translate(text, lang)
-                if (len(trans) > 2000):
-                    cropped = trans[:2000]
-                    return await ctx.send(cropped, delete_after=360)
-                else:
-                    return await ctx.send(trans, delete_after=360)
-
-            lang = dict(zip(conv.values(), conv.keys())).get(lang.lower().title())
-            if lang:
-                trans = f'{ctx.message.author.mention} | *{translate(text, lang)}*'
-                if (len(trans) > 2000):
-                    cropped = trans[:2000]
-                    await ctx.send(cropped, delete_after=360)
-                else:
-                    await ctx.send(trans, delete_after=360)
+        except Exception:
+            pass
+        try:
+            translated = translate(text, lang_code)
+        except Exception as e:
+            await ctx.send(f"⚠️ Translation failed: {e}", delete_after=20)
+            return
+        if len(translated) > 2000:
+            translated = translated[:2000] + "..."
+        await ctx.send(translated, delete_after=360)
 
     # +------------------------------------------------------------+
     # |                   Available Langs                          |
     # +------------------------------------------------------------+
     @tr.command()
     async def langs(self, ctx):
-        """ List of available languages """
-        available = ', '.join(conv.values())
-        foo = 'Full list in https://github.com/WebKide/modmail-plugins/translate/langs.json'
-
-        em = discord.Embed(color=discord.Color.blue())
-        em.set_author(name='Available Languages:', icon_url=ctx.message.author.avatar_url),
-        em.description = f'```bf\n{available}```'
-        em.set_footer(text=foo, icon_url='https://i.imgur.com/yeHFKgl.png')
-
+        """Show all supported languages for translation."""
+        available = ', '.join([f"{name} ({code})" for code, name in conv.items()])
+        url = 'https://github.com/lorenzo132/modmail-plugins/blob/master/translate/langs.json'
+            em = discord.Embed(color=discord.Color.blue())
+            # Use avatar.url if available (discord.py v2.x+), else fallback to default_avatar.url
+            try:
+                author_icon = ctx.author.avatar.url
+            except AttributeError:
+                author_icon = getattr(ctx.author, 'avatar_url', None)
+            if not author_icon:
+                try:
+                    author_icon = ctx.author.default_avatar.url
+                except Exception:
+                    author_icon = None
+            em.set_author(name='Available Languages:', icon_url=author_icon)
+            em.description = f'```\n{available}```'
+            em.set_footer(text=f'Full list: {url}', icon_url='https://i.imgur.com/yeHFKgl.png')
         try:
             await ctx.send(embed=em, delete_after=420)
-
         except discord.Forbidden:
-            msg = f'Available languages:\n```bf\n{available}```\n{foo}'
+            msg = f'Available languages:\n```\n{available}```\n{url}'
             await ctx.send(msg, delete_after=420)
 
     # +------------------------------------------------------------+
