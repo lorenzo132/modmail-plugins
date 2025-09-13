@@ -825,7 +825,7 @@ class Translate(commands.Cog):
             if any(token in blob for token in ['Usage:', 'Permission level', 'Aliases:', 'Example:', 'Examples:']):
                 return
 
-        # Only translate user message embeds; Modmail includes 'Message ID:' in those
+        # Treat as user message unless we detect clear staff markers in the embed content
         parts = []
         if getattr(emb0, 'description', None):
             parts.append(emb0.description)
@@ -835,8 +835,11 @@ class Translate(commands.Cog):
                 parts.append((f.value or ''))
             except Exception:
                 pass
+        if footer_text:
+            parts.append(footer_text)
         blob = ' '.join(parts)
-        if 'Message ID:' not in blob:
+        staff_markers = ['Supporter', 'Moderator', 'Mod', 'Staff', 'Admin', 'Helper']
+        if any(marker in blob for marker in staff_markers):
             return
 
         msg = emb0.description
