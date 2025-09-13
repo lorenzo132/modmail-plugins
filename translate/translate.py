@@ -831,20 +831,12 @@ class Translate(commands.Cog):
         # Translate to the configured language code for this thread
         lang_code = self.tt.get(channel.id, 'en')
         translated = await self._translate_text(msg, dest=lang_code)
-        em = discord.Embed()
-        em.add_field(name="Original", value=msg if len(msg) < 1000 else msg[:1000] + '…', inline=False)
-        em.add_field(name=f"Translated ({conv.get(lang_code, lang_code)})", value=translated if len(translated) < 1000 else translated[:1000] + '…', inline=False)
-        em.color = 4388013
-        # Footer small icon = server icon
-        try:
-            guild_icon = channel.guild.icon.url
-        except AttributeError:
-            guild_icon = getattr(getattr(channel.guild, 'icon', None), 'url', None) if getattr(channel, 'guild', None) else None
-            if not guild_icon:
-                guild_icon = getattr(channel.guild, 'icon_url', None) if getattr(channel, 'guild', None) else None
-        em.set_footer(text="Auto Translate Plugin", icon_url=guild_icon)
-
-        await channel.send(embed=em)
+        if not translated:
+            return
+        # Keep it simple: only post the translated text under the original embed
+        if len(translated) > 2000:
+            translated = translated[:1997] + '...'
+        await channel.send(translated)
 
 
 async def setup(bot):
