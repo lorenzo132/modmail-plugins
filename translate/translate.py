@@ -321,37 +321,46 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     @commands.group(description='Translate text between languages. Usage: {prefix}tr <language> <text>', aliases=['translate'], invoke_without_command=True)
     async def tr(self, ctx, language: str = None, *, text: str = None):
-                """
-                🌍 Translate text from one language to another.
+        """
+        🌍 Translate text from one language to another.
 
-                Usage:
-                    {prefix}tr <language> <text>
-                    Example: {prefix}tr Zulu Hello world!
+        Usage:
+          {prefix}tr <language> <text>
+          Example: {prefix}tr Zulu Hello world!
 
-                Subcommands:
-                    • {prefix}tr text <language> <text>        → Quick translate as subcommand
-                    • {prefix}tr message <text>                → Translate provided text to English
-                    • {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
-                    • {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
-                    • {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
-                    • {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
+        Subcommands:
+          • {prefix}tr text <language> <text>        → Quick translate as subcommand
+          • {prefix}tr message <text>                → Translate provided text to English
+          • {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
+          • {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
+          • {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
+          • {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
 
-                Related commands:
-                    • {prefix}t <language> <text>              → Quick translate
-                    • {prefix}att <language|off>               → Per-thread auto-translate target (or off)
-                    • {prefix}tat <true|false>                 → Global auto-translate on/off
-                    • {prefix}attr <language> <message>        → Translate and reply to user (translation only)
-                    • {prefix}trr [language] <message>         → Translate then reply
-                    • {prefix}trar [language] <message>        → Translate then anon-reply
+        Related commands:
+          • {prefix}t <language> <text>              → Quick translate
+          • {prefix}att <language|off>               → Per-thread auto-translate target (or off)
+          • {prefix}tat <true|false>                 → Global auto-translate on/off
+          • {prefix}attr <language> <message>        → Translate and reply to user (translation only)
+          • {prefix}trr [language] <message>         → Translate then reply
+          • {prefix}trar [language] <message>        → Translate then anon-reply
 
-                Note: Language may be a name (e.g., French) or a code (e.g., fr).
-                """
+        Note: Language may be a name (e.g., French) or a code (e.g., fr).
+        """
+
+        # If a subcommand was invoked, don't run the base behavior
+        if ctx.invoked_subcommand is not None:
+            return
+
         if not language or not text:
-            usage = f"**Usage:** `{ctx.prefix}{ctx.invoked_with} <language> <text>`\nExample: `{ctx.prefix}{ctx.invoked_with} Spanish Hello!`\nUse `{ctx.prefix}{ctx.invoked_with} langs` for all languages."
+            usage = (
+                f"**Usage:** `{ctx.prefix}{ctx.invoked_with} <language> <text>`\n"
+                f"Example: `{ctx.prefix}{ctx.invoked_with} Spanish Hello!`\n"
+                f"Use `{ctx.prefix}{ctx.invoked_with} langs` for all languages."
+            )
             await ctx.send(usage, delete_after=30)
             return
 
-        lang_input = language.strip()
+        lang_input = (language or '').strip()
         lang_code = None
         lang_name = None
         # Try to match by code or name (case-insensitive)
@@ -366,7 +375,10 @@ class Translate(commands.Cog):
                     break
 
         if not lang_code:
-            await ctx.send(f"❌ Unknown language: `{lang_input}`. Use `{ctx.prefix}{ctx.invoked_with} langs` to see all supported languages.", delete_after=20)
+            await ctx.send(
+                f"❌ Unknown language: `{lang_input}`. Use `{ctx.prefix}{ctx.invoked_with} langs` to see all supported languages.",
+                delete_after=20,
+            )
             return
 
         try:
