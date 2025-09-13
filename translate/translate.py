@@ -329,8 +329,8 @@ class Translate(commands.Cog):
         🌍 Translate text from one language to another.
 
         Usage:
-          {prefix}tr <language> <text>
-          Example: {prefix}tr Zulu Hello world!
+          `{prefix}tr <language> <text>`
+          Example: `{prefix}tr Zulu Hello world!`
 
                 Subcommands:
                     • `{prefix}tr text <language> <text> `       → Quick translate
