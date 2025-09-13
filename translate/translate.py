@@ -321,14 +321,31 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     @commands.group(description='Translate text between languages. Usage: {prefix}tr <language> <text>', aliases=['translate'], invoke_without_command=True)
     async def tr(self, ctx, language: str = None, *, text: str = None):
-        """
-        🌍 Translate text from one language to another.
+                """
+                🌍 Translate text from one language to another.
 
-        **Usage:**
-        `{prefix}tr <language> <text>`
-        Example: `{prefix}tr Zulu Hello world!`
-        Use `{prefix}tr langs` to see all supported languages.
-        """
+                Usage:
+                    {prefix}tr <language> <text>
+                    Example: {prefix}tr Zulu Hello world!
+
+                Subcommands:
+                    • {prefix}tr text <language> <text>        → Quick translate as subcommand
+                    • {prefix}tr message <text>                → Translate provided text to English
+                    • {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
+                    • {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
+                    • {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
+                    • {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
+
+                Related commands:
+                    • {prefix}t <language> <text>              → Quick translate
+                    • {prefix}att <language|off>               → Per-thread auto-translate target (or off)
+                    • {prefix}tat <true|false>                 → Global auto-translate on/off
+                    • {prefix}attr <language> <message>        → Translate and reply to user (translation only)
+                    • {prefix}trr [language] <message>         → Translate then reply
+                    • {prefix}trar [language] <message>        → Translate then anon-reply
+
+                Note: Language may be a name (e.g., French) or a code (e.g., fr).
+                """
         if not language or not text:
             usage = f"**Usage:** `{ctx.prefix}{ctx.invoked_with} <language> <text>`\nExample: `{ctx.prefix}{ctx.invoked_with} Spanish Hello!`\nUse `{ctx.prefix}{ctx.invoked_with} langs` for all languages."
             await ctx.send(usage, delete_after=30)
@@ -520,7 +537,7 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     @tr.command(name="message", aliases=["msg"], help="Translate the provided message content into English.")
     async def tr_message(self, ctx, *, message):
-        """Translate a given message string into English.
+        """Translate a given message string into English (default target).
 
         Usage: {prefix}tr message <text>
         """
@@ -599,8 +616,9 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     @commands.command(aliases=["tt"])
     async def translatetext(self, ctx, *, message):
-        """
-        Translates given messageID into English
+        """Translate the provided text into English.
+
+        Usage: {prefix}tt <text>
         """
         tmsg = await self._translate_text(message, dest='en')
         em = discord.Embed()
@@ -680,7 +698,7 @@ class Translate(commands.Cog):
     @checks.has_permissions(PermissionLevel.SUPPORTER)
     @checks.thread_only()
     async def toggle_auto_translations(self, ctx, enabled: bool):
-        """to be used inside ticket threads"""
+        """Enable or disable auto-translate globally for this plugin (use inside threads)."""
         self.enabled = enabled
         await self.db.update_one(
             {'_id': 'config'},
