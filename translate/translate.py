@@ -794,7 +794,20 @@ class Translate(commands.Cog):
             # Fallback: just send to channel (will be relayed by Modmail in most setups)
             await ctx.send(text)
             return
-        await ctx.invoke(cmd, message=text)
+        # Try positional first, then several common keyword parameter names
+        try:
+            await ctx.invoke(cmd, text)
+            return
+        except TypeError:
+            pass
+        for key in ('message', 'msg', 'content', 'text'):
+            try:
+                await ctx.invoke(cmd, **{key: text})
+                return
+            except TypeError:
+                continue
+        # Last resort: send in channel
+        await ctx.send(text)
 
     @commands.command(name='attr')
     @checks.has_permissions(PermissionLevel.SUPPORTER)
