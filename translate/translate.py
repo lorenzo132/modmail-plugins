@@ -825,6 +825,20 @@ class Translate(commands.Cog):
             if any(token in blob for token in ['Usage:', 'Permission level', 'Aliases:', 'Example:', 'Examples:']):
                 return
 
+        # Only translate user message embeds; Modmail includes 'Message ID:' in those
+        parts = []
+        if getattr(emb0, 'description', None):
+            parts.append(emb0.description)
+        for f in getattr(emb0, 'fields', []) or []:
+            try:
+                parts.append((f.name or ''))
+                parts.append((f.value or ''))
+            except Exception:
+                pass
+        blob = ' '.join(parts)
+        if 'Message ID:' not in blob:
+            return
+
         msg = emb0.description
         if not msg:
             return
