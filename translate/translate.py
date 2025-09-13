@@ -332,8 +332,25 @@ class Translate(commands.Cog):
           {prefix}tr <language> <text>
           Example: {prefix}tr Zulu Hello world!
 
-        Tip: Use `{prefix}tr langs` to see all supported languages.
-        Note: Language may be a name (e.g., French) or a code (e.g., fr).
+                Subcommands:
+                    - {prefix}tr text <language> <text>        → Quick translate
+                    - {prefix}tr message <text>                → Translate provided text to English
+                    - {prefix}tr messageid <id> [language]     → Translate a message in this thread by ID
+                    - {prefix}tr langs [page]                  → Show all supported languages (sorted, paginated)
+                    - {prefix}tr auto-thread                   → Toggle this thread in auto-translate list
+                    - {prefix}tr toggle-auto <true|false>      → Enable/disable auto-translate globally
+
+                Related commands:
+                    - {prefix}t <language> <text>              → Quick translate
+                    - {prefix}att <language|off>               → Per-thread auto-translate (set target or disable)
+                    - {prefix}tat <true|false>                 → Global auto-translate on/off
+                    - {prefix}attr <language> <message>        → Translate and reply to user (translation only)
+                    - {prefix}trr [language] <message>         → Translate then reply
+                    - {prefix}trar [language] <message>        → Translate then anon-reply
+
+                Notes:
+                    - Use `{prefix}tr langs` to see all supported languages.
+                    - Language may be a name (e.g., French) or a code (e.g., fr).
         """
 
         if not language or not text:
@@ -483,6 +500,56 @@ class Translate(commands.Cog):
                 f'Use `{ctx.prefix}{ctx.invoked_with} langs <page>` to navigate.'
             )
             await ctx.send(msg)
+
+    # +------------------------------------------------------------+
+    # |              tr help (subcommand)                         |
+    # +------------------------------------------------------------+
+    @tr.command(name="help", help="Show detailed help for translate")
+    async def tr_help(self, ctx):
+        """Show a detailed, formatted help for the translate commands."""
+        prefix = ctx.prefix
+        guild_icon = self._get_guild_icon(ctx.guild)
+        em = discord.Embed(color=discord.Color.blurple())
+        em.set_author(name="Translate — detailed help", icon_url=guild_icon)
+        em.description = (
+            "Translate text from one language to another.\n\n"
+            "Usage:\n"
+            f"`{prefix}tr <language> <text>`\n"
+            f"Example: `{prefix}tr Zulu Hello world!`\n"
+        )
+        em.add_field(
+            name="Subcommands",
+            value=(
+                f"• `{prefix}tr text <language> <text>` — Quick translate\n"
+                f"• `{prefix}tr message <text>` — Translate provided text to English\n"
+                f"• `{prefix}tr messageid <id> [language]` — Translate a message in this thread by ID\n"
+                f"• `{prefix}tr langs [page]` — Show all supported languages (sorted, paginated)\n"
+                f"• `{prefix}tr auto-thread` — Toggle this thread in auto-translate list\n"
+                f"• `{prefix}tr toggle-auto <true|false>` — Enable/disable auto-translate globally\n"
+            ),
+            inline=False,
+        )
+        em.add_field(
+            name="Related commands",
+            value=(
+                f"• `{prefix}t <language> <text>` — Quick translate\n"
+                f"• `{prefix}att <language|off>` — Per-thread auto-translate (set target or disable)\n"
+                f"• `{prefix}tat <true|false>` — Global auto-translate on/off\n"
+                f"• `{prefix}attr <language> <message>` — Translate and reply to user (translation only)\n"
+                f"• `{prefix}trr [language] <message>` — Translate then reply\n"
+                f"• `{prefix}trar [language] <message>` — Translate then anon-reply\n"
+            ),
+            inline=False,
+        )
+        em.add_field(
+            name="Notes",
+            value=(
+                f"• Use `{prefix}tr langs` to see all supported languages.\n"
+                "• Language may be a name (e.g., French) or a code (e.g., fr)."
+            ),
+            inline=False,
+        )
+        await ctx.send(embed=em)
 
     # +------------------------------------------------------------+
     # |              tr text (subcommand)                         |
