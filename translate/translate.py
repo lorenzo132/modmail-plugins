@@ -282,7 +282,14 @@ class Translate(commands.Cog):
         embed.set_author(name=f"{ctx.author.display_name} ({ctx.author.id})", icon_url=getattr(ctx.author, 'avatar_url', None))
         embed.add_field(name="Original", value=f"```{text}```", inline=False)
         embed.add_field(name=f"Translation ({lang_name})", value=f"```{translated}```", inline=False)
-        embed.set_footer(text="Use {0}tr langs for all languages".format(ctx.prefix), icon_url='https://i.imgur.com/yeHFKgl.png')
+        # Use server icon in footer if available
+        try:
+            guild_icon = ctx.guild.icon.url
+        except AttributeError:
+            guild_icon = getattr(getattr(ctx.guild, 'icon', None), 'url', None) if ctx.guild else None
+            if not guild_icon:
+                guild_icon = getattr(ctx.guild, 'icon_url', None) if ctx.guild else None
+        embed.set_footer(text="Use {0}tr langs for all languages".format(ctx.prefix), icon_url=guild_icon)
         try:
             await ctx.message.add_reaction('\N{WHITE HEAVY CHECK MARK}')
         except discord.Forbidden:
@@ -328,29 +335,117 @@ class Translate(commands.Cog):
     # |                   Available Langs                          |
     # +------------------------------------------------------------+
     @tr.command()
-    async def langs(self, ctx):
-        """Show all supported languages for translation."""
-        available = ', '.join([f"{name} ({code})" for code, name in conv.items()])
+    async def langs(self, ctx, page: int = 1):
+        """Show all supported languages for translation (sorted, paginated).
+
+        Usage: {prefix}tr langs [page]
+        """
+        # Sort by language name (value)
+        sorted_items = sorted(conv.items(), key=lambda kv: kv[1].lower())  # (code, name)
+        per_page = 30
+        total_pages = max(1, (len(sorted_items) + per_page - 1) // per_page)
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * per_page
+        end = start + per_page
+        slice_items = sorted_items[start:end]
+
+        lines = [f"{name} ({code})" for code, name in slice_items]
+        body = "\n".join(lines) if lines else "No languages found."
+
         url = 'https://github.com/lorenzo132/modmail-plugins/blob/master/translate/langs.json'
         em = discord.Embed(color=discord.Color.blue())
-        # Use avatar.url if available (discord.py v2.x+), else fallback to default_avatar.url
+        # Small icon = server icon
         try:
-            author_icon = ctx.author.avatar.url
+            guild_icon = ctx.guild.icon.url
         except AttributeError:
-            author_icon = getattr(ctx.author, 'avatar_url', None)
-        if not author_icon:
-            try:
-                author_icon = ctx.author.default_avatar.url
-            except Exception:
-                author_icon = None
-        em.set_author(name='Available Languages:', icon_url=author_icon)
-        em.description = f'```\n{available}```'
-        em.set_footer(text=f'Full list: {url}', icon_url='https://i.imgur.com/yeHFKgl.png')
+            guild_icon = getattr(getattr(ctx.guild, 'icon', None), 'url', None) if ctx.guild else None
+            if not guild_icon:
+                guild_icon = getattr(ctx.guild, 'icon_url', None) if ctx.guild else None
+        em.set_author(name=f'Available Languages (Page {page}/{total_pages})', icon_url=guild_icon)
+        em.description = f'```\n{body}```'
+        em.set_footer(text=f'Full list: {url}', icon_url=guild_icon)
         try:
-            await ctx.send(embed=em, delete_after=420)
+            await ctx.send(embed=em)
         except discord.Forbidden:
-            msg = f'Available languages:\n```\n{available}```\n{url}'
-            await ctx.send(msg, delete_after=420)
+            msg = f'Available languages (Page {page}/{total_pages}):\n```\n{body}```\n{url}'
+            await ctx.send(msg)
+
+    # +------------------------------------------------------------+
+    # |              tr text (subcommand)                         |
+    # +------------------------------------------------------------+
+    @tr.command(name="text", help="Quickly translate text: tr text <language> <text>")
+    async def tr_text(self, ctx, language: str = None, *, text: str = None):
+        """Quick translate as a subcommand of tr.
+
+        Usage: {prefix}tr text <language> <text>
+        Example: {prefix}tr text French How are you?
+        """
+        if not language or not text:
+            await ctx.send(
+                f"**Usage:** `{ctx.prefix}{ctx.invoked_with} text <language> <text>`\n"
+                f"Example: `{ctx.prefix}{ctx.invoked_with} text French How are you?`",
+                delete_after=20,
+            )
+            return
+
+        lang_input = language.strip()
+        lang_code = None
+        for code, name in conv.items():
+            if lang_input.lower() == code or lang_input.lower() == name.lower():
+                lang_code = code
+                break
+        if not lang_code:
+            await ctx.send(
+                f"❌ Unknown language: `{lang_input}`. Use `{ctx.prefix}{ctx.invoked_with} langs` to see all supported languages.",
+                delete_after=20,
+            )
+            return
+
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        try:
+            translated = translate(text, lang_code)
+        except Exception as e:
+            await ctx.send(f"⚠️ Translation failed: {e}", delete_after=20)
+            return
+        if len(translated) > 2000:
+            translated = translated[:2000] + "..."
+        await ctx.send(translated, delete_after=360)
+
+    # +------------------------------------------------------------+
+    # |           tr message (subcommand)                         |
+    # +------------------------------------------------------------+
+    @tr.command(name="message", aliases=["msg"], help="Translate the provided message content into English.")
+    async def tr_message(self, ctx, *, message):
+        """Translate a given message string into English.
+
+        Usage: {prefix}tr message <text>
+        """
+        tmsg = self.translator.translate(message)
+        em = discord.Embed()
+        em.color = 4388013
+        em.description = tmsg.text
+        await ctx.channel.send(embed=em)
+
+    # +------------------------------------------------------------+
+    # |     tr auto-thread & tr toggle-auto (subcommands)         |
+    # +------------------------------------------------------------+
+    @tr.command(name="auto-thread", help="Add/remove this thread to the auto-translate list.")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    @checks.thread_only()
+    async def tr_auto_thread(self, ctx):
+        """Toggle auto-translate for the current thread (subcommand wrapper)."""
+        await self.auto_translate_thread(ctx)
+
+    @tr.command(name="toggle-auto", help="Enable or disable auto-translate globally for this plugin.")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    @checks.thread_only()
+    async def tr_toggle_auto(self, ctx, enabled: bool):
+        """Toggle global auto-translate on/off (subcommand wrapper)."""
+        await self.toggle_auto_translations(ctx, enabled)
 
     # +------------------------------------------------------------+
     # |              Translate Message with ID                     |
@@ -365,6 +460,14 @@ class Translate(commands.Cog):
         em = discord.Embed()
         em.color = 4388013
         em.description = tmsg.text
+        # Footer small icon = server icon
+        try:
+            guild_icon = ctx.guild.icon.url
+        except AttributeError:
+            guild_icon = getattr(getattr(ctx.guild, 'icon', None), 'url', None) if ctx.guild else None
+            if not guild_icon:
+                guild_icon = getattr(ctx.guild, 'icon_url', None) if ctx.guild else None
+        em.set_footer(text="Translated to English", icon_url=guild_icon)
         await ctx.channel.send(embed=em)
 
     # +------------------------------------------------------------+
@@ -438,7 +541,14 @@ class Translate(commands.Cog):
         em = discord.Embed()
         em.description = tmsg.text
         em.color = 4388013
-        em.footer = "Auto Translate Plugin"
+        # Footer small icon = server icon
+        try:
+            guild_icon = channel.guild.icon.url
+        except AttributeError:
+            guild_icon = getattr(getattr(channel.guild, 'icon', None), 'url', None) if getattr(channel, 'guild', None) else None
+            if not guild_icon:
+                guild_icon = getattr(channel.guild, 'icon_url', None) if getattr(channel, 'guild', None) else None
+        em.set_footer(text="Auto Translate Plugin", icon_url=guild_icon)
 
         await channel.send(embed=em)
 
