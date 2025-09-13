@@ -271,6 +271,26 @@ class Translate(commands.Cog):
         else:
             self.tt = {}
 
+    async def _translate_text(self, text, dest=None):
+        """Translate text using googletrans; if the method is async, await it.
+        Falls back to mtranslate on failure. Returns the translated string.
+        """
+        try:
+            res = self.translator.translate(text, dest=dest) if dest else self.translator.translate(text)
+            if asyncio.iscoroutine(res):
+                res = await res
+            translated = getattr(res, 'text', None)
+            if translated is None:
+                translated = res if isinstance(res, str) else str(res)
+            return translated
+        except Exception:
+            # Fallback to mtranslate with a safe default
+            try:
+                code = dest or 'en'
+                return translate(text, code)
+            except Exception:
+                raise
+
 
     # +------------------------------------------------------------+
     # |                   Translate cmd                            |
@@ -480,17 +500,16 @@ class Translate(commands.Cog):
 
         Usage: {prefix}tr message <text>
         """
-        tmsg = self.translator.translate(message)
+        tmsg = await self._translate_text(message, dest='en')
         em = discord.Embed()
         em.color = 4388013
-        em.description = tmsg.text
+        em.description = tmsg
         await ctx.channel.send(embed=em)
 
     # +------------------------------------------------------------+
     # |           tr messageid (subcommand)                        |
     # +------------------------------------------------------------+
     @tr.command(name="messageid", aliases=["mid", "msgid"], help="Translate a message in this thread by its ID. Usage: tr messageid <id> [language]")
-    @checks.thread_only()
     async def tr_messageid(self, ctx, message_id: int, language: str = 'en'):
         """Translate the content of a message in this thread by ID.
 
@@ -498,6 +517,11 @@ class Translate(commands.Cog):
           {prefix}tr messageid <message_id> [language]
         Defaults to English when language isn't provided.
         """
+        # Ensure we are in a Modmail thread to avoid CheckFailure and provide a helpful error
+        topic = getattr(ctx.channel, 'topic', '') or ''
+        if 'User ID:' not in topic:
+            await ctx.send("This command must be used inside a Modmail thread channel.", delete_after=15)
+            return
         # Try to fetch the message from the current channel (thread)
         try:
             msg = await ctx.channel.fetch_message(message_id)
@@ -517,8 +541,7 @@ class Translate(commands.Cog):
 
         lang_code = self._resolve_lang_code(language or 'en')
         try:
-            tmsg = self.translator.translate(text, dest=lang_code)
-            translated = tmsg.text
+            translated = await self._translate_text(text, dest=lang_code)
         except Exception as e:
             await ctx.send(f"⚠️ Translation failed: {e}", delete_after=15)
             return
@@ -555,10 +578,10 @@ class Translate(commands.Cog):
         """
         Translates given messageID into English
         """
-        tmsg = self.translator.translate(message)
+        tmsg = await self._translate_text(message, dest='en')
         em = discord.Embed()
         em.color = 4388013
-        em.description = tmsg.text
+        em.description = tmsg
         # Footer small icon = server icon
         try:
             guild_icon = ctx.guild.icon.url
@@ -757,10 +780,10 @@ class Translate(commands.Cog):
         msg = message.embeds[0].description
         # Translate to the configured language code for this thread
         lang_code = self.tt.get(channel.id, 'en')
-        tmsg = self.translator.translate(msg, dest=lang_code)
+        translated = await self._translate_text(msg, dest=lang_code)
         em = discord.Embed()
         em.add_field(name="Original", value=msg if len(msg) < 1000 else msg[:1000] + '…', inline=False)
-        em.add_field(name=f"Translated ({conv.get(lang_code, lang_code)})", value=tmsg.text if len(tmsg.text) < 1000 else tmsg.text[:1000] + '…', inline=False)
+        em.add_field(name=f"Translated ({conv.get(lang_code, lang_code)})", value=translated if len(translated) < 1000 else translated[:1000] + '…', inline=False)
         em.color = 4388013
         # Footer small icon = server icon
         try:
