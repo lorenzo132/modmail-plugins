@@ -319,22 +319,22 @@ class Translate(commands.Cog):
     # +------------------------------------------------------------+
     # |                   Translate cmd                            |
     # +------------------------------------------------------------+
-    @commands.group(description='Translate text between languages. Usage: {prefix}tr <language> <text>', aliases=['translate'], invoke_without_command=True)
+    @commands.group(
+        description='Translate text between languages. Usage: {prefix}tr <language> <text>',
+        aliases=['translate'],
+        invoke_without_command=True,
+    )
     async def tr(self, ctx, language: str = None, *, text: str = None):
-                """
-                🌍 Translate text from one language to another.
+        """
+        🌍 Translate text from one language to another.
 
-                Usage:
-                    {prefix}tr <language> <text>
-                    Example: {prefix}tr Zulu Hello world!
+        Usage:
+          {prefix}tr <language> <text>
+          Example: {prefix}tr Zulu Hello world!
 
-                Tip: Use `{prefix}tr langs` to see all supported languages.
-                Note: Language may be a name (e.g., French) or a code (e.g., fr).
-                """
-
-        # If a subcommand was invoked, don't run the base behavior
-        if ctx.invoked_subcommand is not None:
-            return
+        Tip: Use `{prefix}tr langs` to see all supported languages.
+        Note: Language may be a name (e.g., French) or a code (e.g., fr).
+        """
 
         if not language or not text:
             usage = (
