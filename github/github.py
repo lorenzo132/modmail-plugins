@@ -80,9 +80,8 @@ class GithubPlugin(commands.Cog):
 
     def _base(self, data: dict, repo: str, is_issue: bool = True) -> discord.Embed:
         # Truncate the body if it's too long
-        description = (
-            f"{data['body'][:2045]}..." if len(data["body"]) > 2048 else data["body"]
-        )
+        body = data.get("body") or ""
+        description = f"{body[:2045]}..." if len(body) > 2048 else body
 
         # Determine the type (Issue or Pull Request)
         _type = "Issue" if is_issue else "Pull Request"
